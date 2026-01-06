@@ -13,10 +13,9 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 bot = TeleBot(TOKEN)
 client = MongoClient(MONGO_URI)
-db = client['icecoin_db']
-users = db.users
-stats = db.global_stats
-
+db = client['icecoin_db'] 
+users = db.ice_players  # Новое имя для юзеров ICECOIN
+stats = db.ice_economy  # Новое имя для статистики ICECOIN
 # Инициализация глобальной статистики
 if not stats.find_one({"_id": "economy"}):
     stats.insert_one({
