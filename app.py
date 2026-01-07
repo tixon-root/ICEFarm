@@ -735,9 +735,13 @@ def broadcast(m):
 # ---------- ERROR HANDLER ----------
 
 @bot.message_handler(func=lambda m: True)
-def echo_all(m):
-    """Ответ на неизвестные сообщения"""
-    bot.send_message(m.chat.id, "❓ Неизвестная команда. Используйте /start или /help")
+def unknown_command(m):
+    # Если сообщение пришло из группы — просто игнорируем его
+    if m.chat.type != 'private':
+        return
+        
+    # Если в личке — подсказываем
+    bot.reply_to(m, "❓ Неизвестная команда. Используйте меню или /start")
 
 # ---------- RUN ----------
 
