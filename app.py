@@ -128,13 +128,15 @@ def set_webhook():
 
 # ---------- START ----------
 
+# ---------- START ----------
+
 @bot.message_handler(commands=["start"])
 def start(m):
     """Команда /start"""
     try:
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
             return
 
         txt = f"""
@@ -148,17 +150,18 @@ def start(m):
 
 <i>Выберите действие из меню:</i>
 """
-                bot.send_message(
+        # ТУТ БЫЛА ОШИБКА: Убери все лишние пробелы перед bot
+        bot.send_message(
             m.chat.id, 
             txt, 
             reply_markup=create_main_keyboard(),
             parse_mode="HTML",
-            message_thread_id=m.message_thread_id # Добавлено
-)
+            message_thread_id=m.message_thread_id
+        )
         
     except Exception as e:
         logger.error(f"Ошибка start: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
 
 # ---------- PROFILE ----------
 
@@ -168,7 +171,7 @@ def profile(m):
     try:
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
             return
 
         now = int(time.time())
@@ -186,16 +189,18 @@ def profile(m):
 
 ⛏ Статус фарма: {farm_status}
 """
-                bot.send_message(
+        # ТУТ ТОЖЕ БЫЛА ОШИБКА: Выровняй отступ
+        bot.send_message(
             m.chat.id, 
             txt, 
             parse_mode="HTML",
-            message_thread_id=m.message_thread_id # Добавлено
+            message_thread_id=m.message_thread_id
         )
 
     except Exception as e:
         logger.error(f"Ошибка profile: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
+        
 
 # ---------- FARM ----------
 
