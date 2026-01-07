@@ -1,317 +1,658 @@
 import os
 import time
-from flask import Flask, request
+import random
+from flask import Flask, request, jsonify
 import telebot
 from telebot import types
 from pymongo import MongoClient
 from dotenv import load_dotenv
+import logging
 
+# ---------- LOGGING ----------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ---------- LOAD ENV ----------
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
-ADMIN = os.getenv("ADMIN_USERNAME")
 WEBHOOK = os.getenv("WEBHOOK")
+ADMIN = os.getenv("ADMIN_USERNAME")
 
+# Валидация переменных окружения
+if not all([TOKEN, MONGO_URI, WEBHOOK, ADMIN]):
+    raise ValueError("Не все переменные окружения установлены!")
+
+# ---------- INIT ----------
 bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
 
-# ⚠️ ВАЖНО: сначала создаём bot, потом webhook
-bot.remove_webhook()
-time.sleep(1)
-bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
+# ---------- DB ----------
+try:
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    client.server_info()  # Проверка подключения
+    db = client["icecoin"]
+    users = db.users
+    battles = db.battles
+    
+    # Создание индексов для оптимизации
+    users.create_index("username")
+    users.create_index([("balance", -1)])
+    battles.create_index("status")
+    logger.info("База данных подключена успешно")
+except Exception as e:
+    logger.error(f"Ошибка подключения к БД: {e}")
+    raise
 
-db = MongoClient(MONGO_URI)["icecoin"]
-users = db.users
-promos = db.promos
-withdraws = db.withdraws
+FARM_CD = 10800  # 3 часа
 
-FARM_CD = 10800
-DAILY_CD = 86400
-
-# ---------------- UTILS ----------------
+# ---------- UTILS ----------
 
 def get_user(uid, username):
-    if not username:
-        username = f"id{uid}"
-    u = users.find_one({"_id": uid})
-    if not u:
-        users.insert_one({
-            "_id": uid,
-            "username": username,
-            "balance": 0.0,
-            "level": 1,
-            "last_farm": 0,
-            "last_daily": 0,
-            "promo_used": [],
-            "battles_win": 0,
-            "battles_lose": 0,
-            "banned": False
-        })
-        return get_user(uid, username)
-    if u.get("username") != username:
-        users.update_one({"_id": uid}, {"$set": {"username": username}})
-    return u
+    """Получить или создать пользователя"""
+    try:
+        username = username or f"user_{uid}"  # Защита от None
+        users.update_one(
+            {"_id": uid},
+            {"$setOnInsert": {
+                "username": username,
+                "balance": 0.0,
+                "level": 1,
+                "farm": 0,
+                "wins": 0
+            }},
+            upsert=True
+        )
+        return users.find_one({"_id": uid})
+    except Exception as e:
+        logger.error(f"Ошибка get_user: {e}")
+        return None
 
-def farm_income(level):
+def farm_amount(level):
+    """Расчет награды за фарм"""
     return round(0.4 * level, 2)
 
 def upgrade_price(level):
-    return level * 2
+    """Расчет цены улучшения"""
+    return round(1 + level * 0.8, 2)
 
-# ---------------- MENU ----------------
+def fmt(x):
+    """Форматирование числа"""
+    return round(float(x), 2)
 
-def main_menu():
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("⛏ FARM", callback_data="farm"),
-        types.InlineKeyboardButton("🎁 DAILY", callback_data="daily"),
-        types.InlineKeyboardButton("⏫ UPGRADE", callback_data="upgrade"),
-        types.InlineKeyboardButton("⚔ BATTLES", callback_data="battles"),
-        types.InlineKeyboardButton("🏆 TOP", callback_data="top"),
-        types.InlineKeyboardButton("📤 SEND", callback_data="send"),
-        types.InlineKeyboardButton("📥 WITHDRAW", callback_data="withdraw")
-    )
+def create_main_keyboard():
+    """Создание главной клавиатуры"""
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add("⛏ Фарм", "⏫ Улучшить")
+    kb.add("🏆 Топ", "⚔ Батл")
+    kb.add("💸 Отправить", "👤 Профиль")
     return kb
 
-# ---------------- START ----------------
-
-@bot.message_handler(commands=["start"])
-def start(m):
-    u = get_user(m.from_user.id, m.from_user.username)
-    text = f"""
-🧊 ICECOIN FARM
-
-👤 ID: {u['_id']}
-💰 Balance: {u['balance']} ICE
-⚙ Level: {u['level']}
-⛏ Income: {farm_income(u['level'])} ICE / 3h
-"""
-    bot.send_message(m.chat.id, text, reply_markup=main_menu())
-
-# ---------------- CALLBACKS ----------------
-
-@bot.callback_query_handler(func=lambda c: True)
-def callbacks(c):
-    uid = c.from_user.id
-    u = get_user(uid, c.from_user.username)
-
-    if c.data == "farm":
-        do_farm(uid, c.message)
-    elif c.data == "daily":
-        do_daily(uid, c.message)
-    elif c.data == "upgrade":
-        do_upgrade(uid, c.message)
-    elif c.data == "top":
-        send_top(c.message)
-    elif c.data == "withdraw":
-        do_withdraw(c.message)
-    elif c.data == "send":
-        bot.send_message(c.message.chat.id, "📤 Use: /send USERID AMOUNT")
-    elif c.data == "battles":
-        bot.send_message(c.message.chat.id, "⚔ Use /battles AMOUNT (reply to user)")
-
-# ---------------- FARM ----------------
-
-def do_farm(uid, msg):
-    u = users.find_one({"_id": uid})
-    now = int(time.time())
-    if now - u["last_farm"] < FARM_CD:
-        left = FARM_CD - (now - u["last_farm"])
-        bot.send_message(msg.chat.id, f"⏳ Wait {left//60} min")
-        return
-    reward = farm_income(u["level"])
-    users.update_one({"_id": uid}, {"$set": {"last_farm": now}, "$inc": {"balance": reward}})
-    bot.send_message(msg.chat.id, f"⛏ +{reward} ICE")
-
-# ---------------- DAILY ----------------
-
-def do_daily(uid, msg):
-    u = users.find_one({"_id": uid})
-    now = int(time.time())
-    if now - u["last_daily"] < DAILY_CD:
-        bot.send_message(msg.chat.id, "⏳ Daily already claimed")
-        return
-    reward = round(1 + 0.2 * u["level"], 2)
-    users.update_one({"_id": uid}, {"$set": {"last_daily": now}, "$inc": {"balance": reward}})
-    bot.send_message(msg.chat.id, f"🎁 You got {reward} ICE")
-
-# ---------------- UPGRADE ----------------
-
-def do_upgrade(uid, msg):
-    u = users.find_one({"_id": uid})
-    price = upgrade_price(u["level"])
-    if u["balance"] < price:
-        bot.send_message(msg.chat.id, f"❌ Need {price} ICE")
-        return
-    users.update_one({"_id": uid}, {"$inc": {"balance": -price, "level": 1}})
-    bot.send_message(msg.chat.id, "⏫ Level upgraded!")
-
-# ---------------- SEND ----------------
-
-@bot.message_handler(commands=["send"])
-def send_ice(m):
-    try:
-        _, uid, amount = m.text.split()
-        uid = int(uid)
-        amount = float(amount)
-    except:
-        bot.reply_to(m, "Usage: /send USERID AMOUNT")
-        return
-
-    if amount < 1:
-        bot.reply_to(m, "Minimum 1 ICE")
-        return
-
-    sender = get_user(m.from_user.id, m.from_user.username)
-    if sender["balance"] < amount:
-        bot.reply_to(m, "Not enough ICE")
-        return
-
-    fee = round(amount * 0.05, 2)
-    receive = amount - fee
-
-    users.update_one({"_id": sender["_id"]}, {"$inc": {"balance": -amount}})
-    users.update_one({"_id": uid}, {"$inc": {"balance": receive}})
-
-    bot.reply_to(m, f"📤 Sent {receive} ICE (fee {fee})")
-
-# ---------------- WITHDRAW ----------------
-
-def do_withdraw(msg):
-    u = get_user(msg.from_user.id, msg.from_user.username)
-    if u["balance"] < 25:
-        bot.send_message(msg.chat.id, "❌ Minimum withdraw 25 ICE")
-        return
-    withdraws.insert_one({"user_id": u["_id"], "amount": u["balance"], "time": int(time.time())})
-    bot.send_message(msg.chat.id, "📨 Write to @herozvz to withdraw")
-
-# ---------------- TOP ----------------
-
-def send_top(msg):
-    top = users.find().sort("balance", -1).limit(10)
-    text = "🏆 TOP ICECOIN\n\n"
-    i = 1
-    for u in top:
-        name = u.get("username") or f"id{u['_id']}"
-        text += f"{i}. @{name} — {round(u['balance'],2)} ICE\n"
-        i += 1
-    bot.send_message(msg.chat.id, text)
-
-# ---------------- BATTLES ----------------
-
-@bot.message_handler(commands=["battles"])
-def battles(m):
-    if not m.reply_to_message:
-        bot.reply_to(m, "Reply to user")
-        return
-    try:
-        bet = float(m.text.split()[1])
-    except:
-        bot.reply_to(m, "Usage: /battles 5")
-        return
-
-    u1 = get_user(m.from_user.id, m.from_user.username)
-    u2 = get_user(m.reply_to_message.from_user.id, m.reply_to_message.from_user.username)
-
-    if u1["balance"] < bet or u2["balance"] < bet:
-        bot.reply_to(m, "Not enough ICE")
-        return
-
-    users.update_one({"_id": u1["_id"]}, {"$inc": {"balance": -bet}})
-    users.update_one({"_id": u2["_id"]}, {"$inc": {"balance": -bet}})
-
-    d1 = bot.send_dice(m.chat.id).dice.value
-    d2 = bot.send_dice(m.chat.id).dice.value
-
-    win = round(bet * 2 * 0.9, 2)
-
-    if d1 > d2:
-        users.update_one({"_id": u1["_id"]}, {"$inc": {"balance": win, "battles_win": 1}})
-        users.update_one({"_id": u2["_id"]}, {"$inc": {"battles_lose": 1}})
-        bot.send_message(m.chat.id, f"🏆 @{u1['username']} wins {win} ICE")
-    else:
-        users.update_one({"_id": u2["_id"]}, {"$inc": {"balance": win, "battles_win": 1}})
-        users.update_one({"_id": u1["_id"]}, {"$inc": {"battles_lose": 1}})
-        bot.send_message(m.chat.id, f"🏆 @{u2['username']} wins {win} ICE")
-
-# ---------------- PROMO ----------------
-
-@bot.message_handler(commands=["promo"])
-def promo(m):
-    u = get_user(m.from_user.id, m.from_user.username)
-    try:
-        code = m.text.split()[1]
-    except:
-        return
-    p = promos.find_one({"code": code})
-    if not p or p["uses_left"] <= 0:
-        bot.reply_to(m, "Invalid promo")
-        return
-    if code in u["promo_used"]:
-        bot.reply_to(m, "Already used")
-        return
-
-    users.update_one({"_id": u["_id"]}, {"$inc": {"balance": p["amount"]}, "$push": {"promo_used": code}})
-    promos.update_one({"code": code}, {"$inc": {"uses_left": -1}})
-    bot.reply_to(m, f"🎁 +{p['amount']} ICE")
-
-# ---------------- ADMIN ----------------
-
-@bot.message_handler(commands=["admin"])
-def admin(m):
-    if m.from_user.username != ADMIN: return
-    bot.send_message(m.chat.id,
-"""
-🛠 ADMIN
-/addpromo CODE AMOUNT USES
-/give ID AMOUNT
-/take ID AMOUNT
-/reset ID
-/stats
-""")
-
-@bot.message_handler(commands=["addpromo"])
-def addpromo(m):
-    if m.from_user.username != ADMIN: return
-    _, code, amount, uses = m.text.split()
-    promos.insert_one({"code": code, "amount": float(amount), "uses_left": int(uses)})
-    bot.reply_to(m, "Promo added")
-
-@bot.message_handler(commands=["give"])
-def give(m):
-    if m.from_user.username != ADMIN: return
-    _, uid, amount = m.text.split()
-    users.update_one({"_id": int(uid)}, {"$inc": {"balance": float(amount)}})
-    bot.reply_to(m, "Done")
-
-@bot.message_handler(commands=["take"])
-def take(m):
-    if m.from_user.username != ADMIN: return
-    _, uid, amount = m.text.split()
-    users.update_one({"_id": int(uid)}, {"$inc": {"balance": -float(amount)}})
-    bot.reply_to(m, "Done")
-
-@bot.message_handler(commands=["stats"])
-def stats(m):
-    if m.from_user.username != ADMIN: return
-    total_users = users.count_documents({})
-    total_ice = sum(u["balance"] for u in users.find())
-    bot.reply_to(m, f"👥 {total_users} users\n💰 {round(total_ice,2)} ICE in system")
-
-# ---------------- WEBHOOK ----------------
+# ---------- WEBHOOK ----------
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
-    return "OK"
+    """Обработка webhook от Telegram"""
+    try:
+        json_data = request.get_json(force=True)
+        update = telebot.types.Update.de_json(json_data)
+        bot.process_new_updates([update])
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        logger.error(f"Ошибка webhook: {e}")
+        return jsonify({"status": "error"}), 500
 
 @app.route("/")
 def index():
-    return "ICECOIN BOT RUNNING"
+    """Проверка работы сервера"""
+    return jsonify({
+        "status": "online",
+        "bot": "ICECOIN",
+        "version": "2.0"
+    })
 
-bot.remove_webhook()
-bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
+@app.route("/set_webhook")
+def set_webhook():
+    """Установка webhook"""
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+        result = bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
+        return jsonify({"webhook_set": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+# ---------- START ----------
+
+@bot.message_handler(commands=["start"])
+def start(m):
+    """Команда /start"""
+    try:
+        u = get_user(m.from_user.id, m.from_user.username)
+        if not u:
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            return
+
+        txt = f"""
+❄️ <b>ICECOIN - Криптовалютная игра</b>
+
+👤 @{u['username']}
+🆔 <code>{u['_id']}</code>
+💰 Баланс: <b>{fmt(u['balance'])} ICE</b>
+⛏ Уровень фарма: <b>{u['level']}</b>
+🏆 Побед в батлах: <b>{u['wins']}</b>
+
+<i>Выберите действие из меню:</i>
+"""
+        bot.send_message(
+            m.chat.id, 
+            txt, 
+            reply_markup=create_main_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка start: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+
+# ---------- PROFILE ----------
+
+@bot.message_handler(func=lambda m: m.text == "👤 Профиль" or m.text == "/profile")
+def profile(m):
+    """Показать профиль"""
+    try:
+        u = get_user(m.from_user.id, m.from_user.username)
+        if not u:
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            return
+
+        now = int(time.time())
+        next_farm = u["farm"] + FARM_CD - now
+        farm_status = f"✅ Доступно!" if next_farm <= 0 else f"⏳ Через {next_farm // 60} мин"
+        
+        txt = f"""
+👤 <b>Профиль @{u['username']}</b>
+
+💰 Баланс: <b>{fmt(u['balance'])} ICE</b>
+⛏ Уровень фарма: <b>{u['level']}</b>
+📈 Добыча за фарм: <b>{farm_amount(u['level'])} ICE</b>
+⏫ Цена улучшения: <b>{upgrade_price(u['level'])} ICE</b>
+🏆 Побед в батлах: <b>{u['wins']}</b>
+
+⛏ Статус фарма: {farm_status}
+"""
+        bot.send_message(m.chat.id, txt, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Ошибка profile: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+
+# ---------- FARM ----------
+
+@bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
+def farm(m):
+    """Добыча монет"""
+    try:
+        u = get_user(m.from_user.id, m.from_user.username)
+        if not u:
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            return
+
+        now = int(time.time())
+        time_passed = now - u["farm"]
+
+        if time_passed < FARM_CD:
+            wait = FARM_CD - time_passed
+            hours = wait // 3600
+            minutes = (wait % 3600) // 60
+            bot.send_message(
+                m.chat.id, 
+                f"⏳ Следующий фарм через: <b>{hours}ч {minutes}м</b>",
+                parse_mode="HTML"
+            )
+            return
+
+        gain = farm_amount(u["level"])
+        new_balance = fmt(u["balance"] + gain)
+
+        users.update_one(
+            {"_id": u["_id"]},
+            {"$set": {"farm": now, "balance": new_balance}}
+        )
+        
+        bot.send_message(
+            m.chat.id, 
+            f"❄️ Вы добыли <b>{gain} ICE</b>\n💰 Баланс: <b>{new_balance} ICE</b>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка farm: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+
+# ---------- UPGRADE ----------
+
+@bot.message_handler(func=lambda m: m.text == "⏫ Улучшить" or m.text == "/upgrade")
+def upgrade(m):
+    """Улучшение уровня фарма"""
+    try:
+        u = get_user(m.from_user.id, m.from_user.username)
+        if not u:
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            return
+
+        price = upgrade_price(u["level"])
+
+        if u["balance"] < price:
+            bot.send_message(
+                m.chat.id, 
+                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(u['balance'])} ICE</b>",
+                parse_mode="HTML"
+            )
+            return
+
+        new_level = u["level"] + 1
+        new_balance = fmt(u["balance"] - price)
+        new_farm_amount = farm_amount(new_level)
+
+        users.update_one(
+            {"_id": u["_id"]},
+            {
+                "$set": {"balance": new_balance, "level": new_level}
+            }
+        )
+        
+        bot.send_message(
+            m.chat.id,
+            f"✅ <b>Уровень фарма повышен!</b>\n\n"
+            f"⛏ Новый уровень: <b>{new_level}</b>\n"
+            f"📈 Добыча за фарм: <b>{new_farm_amount} ICE</b>\n"
+            f"💰 Остаток: <b>{new_balance} ICE</b>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка upgrade: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+
+# ---------- SEND ----------
+
+@bot.message_handler(func=lambda m: m.text == "💸 Отправить")
+def send_menu(m):
+    """Меню отправки"""
+    bot.send_message(
+        m.chat.id,
+        "💸 <b>Отправка ICE</b>\n\n"
+        "Используйте команду:\n"
+        "<code>/send ID СУММА</code>\n\n"
+        "Пример: <code>/send 123456789 10</code>",
+        parse_mode="HTML"
+    )
+
+@bot.message_handler(commands=["send"])
+def send(m):
+    """Отправка монет другому пользователю"""
+    try:
+        parts = m.text.split()
+        if len(parts) != 3:
+            bot.send_message(
+                m.chat.id,
+                "❌ Неверный формат!\nИспользуйте: <code>/send ID СУММА</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        try:
+            to_id = int(parts[1])
+            amount = float(parts[2])
+        except ValueError:
+            bot.send_message(m.chat.id, "❌ ID и сумма должны быть числами!")
+            return
+
+        if amount <= 0:
+            bot.send_message(m.chat.id, "❌ Сумма должна быть больше 0!")
+            return
+
+        if amount < 0.01:
+            bot.send_message(m.chat.id, "❌ Минимальная сумма: 0.01 ICE")
+            return
+
+        u = get_user(m.from_user.id, m.from_user.username)
+        if not u:
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            return
+
+        if u["_id"] == to_id:
+            bot.send_message(m.chat.id, "❌ Нельзя отправить себе!")
+            return
+
+        if u["balance"] < amount:
+            bot.send_message(
+                m.chat.id,
+                f"❌ Недостаточно средств!\nУ вас: <b>{fmt(u['balance'])} ICE</b>",
+                parse_mode="HTML"
+            )
+            return
+
+        # Проверка существования получателя
+        recipient = users.find_one({"_id": to_id})
+        if not recipient:
+            bot.send_message(m.chat.id, "❌ Пользователь не найден!")
+            return
+
+        # Транзакция
+        users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -amount}})
+        users.update_one({"_id": to_id}, {"$inc": {"balance": amount}})
+
+        bot.send_message(
+            m.chat.id,
+            f"✅ Отправлено <b>{fmt(amount)} ICE</b> → @{recipient['username']}",
+            parse_mode="HTML"
+        )
+        
+        # Уведомление получателю
+        try:
+            bot.send_message(
+                to_id,
+                f"💰 Вам пришло <b>{fmt(amount)} ICE</b> от @{u['username']}",
+                parse_mode="HTML"
+            )
+        except:
+            pass  # Получатель мог заблокировать бота
+
+    except Exception as e:
+        logger.error(f"Ошибка send: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка при отправке")
+
+# ---------- TOP ----------
+
+@bot.message_handler(func=lambda m: m.text == "🏆 Топ" or m.text == "/top")
+def top(m):
+    """Топ игроков по балансу"""
+    try:
+        top_users = list(users.find().sort("balance", -1).limit(10))
+        
+        if not top_users:
+            bot.send_message(m.chat.id, "📊 Топ пока пуст!")
+            return
+
+        txt = "🏆 <b>ТОП-10 ИГРОКОВ</b>\n\n"
+        medals = ["🥇", "🥈", "🥉"]
+        
+        for i, u in enumerate(top_users, 1):
+            medal = medals[i-1] if i <= 3 else f"{i}."
+            txt += f"{medal} @{u['username']} — <b>{fmt(u['balance'])} ICE</b>\n"
+        
+        bot.send_message(m.chat.id, txt, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Ошибка top: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+
+# ---------- BATTLE ----------
+
+@bot.message_handler(func=lambda m: m.text == "⚔ Батл")
+def battle_menu(m):
+    """Меню батлов"""
+    bot.send_message(
+        m.chat.id,
+        "⚔️ <b>БАТЛ</b>\n\n"
+        "Чтобы начать батл, ответьте командой /battle на сообщение игрока\n\n"
+        "Правила:\n"
+        "• Оба игрока бросают кубик (1-6)\n"
+        "• У кого больше — забирает ставку\n"
+        "• При равенстве победитель определяется случайно",
+        parse_mode="HTML"
+    )
+
+@bot.message_handler(commands=["battle"])
+def battle(m):
+    """Вызов на батл"""
+    try:
+        if not m.reply_to_message:
+            bot.send_message(
+                m.chat.id,
+                "❌ Ответьте этой командой на сообщение игрока!"
+            )
+            return
+
+        challenger = m.from_user
+        opponent = m.reply_to_message.from_user
+
+        if challenger.id == opponent.id:
+            bot.send_message(m.chat.id, "❌ Нельзя вызвать самого себя!")
+            return
+
+        if opponent.is_bot:
+            bot.send_message(m.chat.id, "❌ Нельзя вызвать бота!")
+            return
+
+        # Проверка существующих батлов
+        existing = battles.find_one({
+            "$or": [
+                {"from": challenger.id, "status": {"$in": ["wait", "bet"]}},
+                {"to": challenger.id, "status": {"$in": ["wait", "bet"]}}
+            ]
+        })
+        
+        if existing:
+            bot.send_message(m.chat.id, "❌ У вас уже есть активный батл!")
+            return
+
+        # Создание батла
+        battle_id = battles.insert_one({
+            "chat": m.chat.id,
+            "from": challenger.id,
+            "from_username": challenger.username or f"user_{challenger.id}",
+            "to": opponent.id,
+            "to_username": opponent.username or f"user_{opponent.id}",
+            "status": "wait",
+            "created": int(time.time())
+        }).inserted_id
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(
+            types.InlineKeyboardButton("✅ Принять", callback_data=f"accept_{battle_id}"),
+            types.InlineKeyboardButton("❌ Отказать", callback_data=f"deny_{battle_id}")
+        )
+
+        bot.send_message(
+            m.chat.id,
+            f"⚔️ <b>ВЫЗОВ НА БАТЛ!</b>\n\n"
+            f"@{challenger.username} вызывает @{opponent.username or opponent.id}",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка battle: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("accept_"))
+def accept_battle(c):
+    """Принятие батла"""
+    try:
+        battle_id = c.data.split("_")[1]
+        from bson.objectid import ObjectId
+        
+        b = battles.find_one({"_id": ObjectId(battle_id), "status": "wait"})
+        
+        if not b:
+            bot.answer_callback_query(c.id, "❌ Батл уже не активен!")
+            return
+
+        if c.from_user.id != b["to"]:
+            bot.answer_callback_query(c.id, "❌ Это не ваш батл!")
+            return
+
+        # Проверка балансов
+        challenger = users.find_one({"_id": b["from"]})
+        opponent = users.find_one({"_id": b["to"]})
+
+        if not challenger or not opponent:
+            bot.answer_callback_query(c.id, "❌ Ошибка данных игроков")
+            battles.delete_one({"_id": b["_id"]})
+            return
+
+        battles.update_one({"_id": b["_id"]}, {"$set": {"status": "bet"}})
+
+        kb = types.InlineKeyboardMarkup(row_width=3)
+        bets = [1, 5, 10, 25, 50, 100]
+        buttons = []
+        
+        for bet in bets:
+            if challenger["balance"] >= bet and opponent["balance"] >= bet:
+                buttons.append(
+                    types.InlineKeyboardButton(
+                        f"{bet} ICE",
+                        callback_data=f"bet_{battle_id}_{bet}"
+                    )
+                )
+        
+        if not buttons:
+            bot.edit_message_text(
+                "❌ У одного из игроков недостаточно средств для минимальной ставки (1 ICE)",
+                c.message.chat.id,
+                c.message.message_id
+            )
+            battles.delete_one({"_id": b["_id"]})
+            return
+
+        kb.add(*buttons)
+
+        bot.edit_message_text(
+            f"✅ @{opponent['username']} принял вызов!\n\n"
+            f"Выберите ставку:",
+            c.message.chat.id,
+            c.message.message_id,
+            reply_markup=kb
+        )
+        bot.answer_callback_query(c.id, "✅ Вы приняли вызов!")
+
+    except Exception as e:
+        logger.error(f"Ошибка accept_battle: {e}")
+        bot.answer_callback_query(c.id, "❌ Произошла ошибка")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("deny_"))
+def deny_battle(c):
+    """Отказ от батла"""
+    try:
+        battle_id = c.data.split("_")[1]
+        from bson.objectid import ObjectId
+        
+        b = battles.find_one({"_id": ObjectId(battle_id)})
+        
+        if not b:
+            bot.answer_callback_query(c.id, "❌ Батл уже не активен!")
+            return
+
+        if c.from_user.id != b["to"]:
+            bot.answer_callback_query(c.id, "❌ Это не ваш батл!")
+            return
+
+        battles.delete_one({"_id": b["_id"]})
+        
+        bot.edit_message_text(
+            f"❌ @{b['to_username']} отказался от батла",
+            c.message.chat.id,
+            c.message.message_id
+        )
+        bot.answer_callback_query(c.id, "Вы отказались от батла")
+
+    except Exception as e:
+        logger.error(f"Ошибка deny_battle: {e}")
+        bot.answer_callback_query(c.id, "❌ Произошла ошибка")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("bet_"))
+def place_bet(c):
+    """Размещение ставки и проведение батла"""
+    try:
+        parts = c.data.split("_")
+        battle_id = parts[1]
+        bet = int(parts[2])
+        
+        from bson.objectid import ObjectId
+        b = battles.find_one({"_id": ObjectId(battle_id), "status": "bet"})
+        
+        if not b:
+            bot.answer_callback_query(c.id, "❌ Батл уже не активен!")
+            return
+
+        # Проверка что ставку делает участник
+        if c.from_user.id not in [b["from"], b["to"]]:
+            bot.answer_callback_query(c.id, "❌ Вы не участник этого батла!")
+            return
+
+        # Получение данных игроков
+        challenger = users.find_one({"_id": b["from"]})
+        opponent = users.find_one({"_id": b["to"]})
+
+        if not challenger or not opponent:
+            bot.answer_callback_query(c.id, "❌ Ошибка данных игроков")
+            battles.delete_one({"_id": b["_id"]})
+            return
+
+        # Проверка балансов
+        if challenger["balance"] < bet or opponent["balance"] < bet:
+            bot.answer_callback_query(c.id, "❌ Недостаточно средств!")
+            return
+
+        # Проведение батла
+        dice1 = random.randint(1, 6)
+        dice2 = random.randint(1, 6)
+
+        result_text = (
+            f"⚔️ <b>БАТЛ!</b>\n\n"
+            f"🎲 @{challenger['username']}: <b>{dice1}</b>\n"
+            f"🎲 @{opponent['username']}: <b>{dice2}</b>\n\n"
+        )
+
+        # Определение победителя
+        if dice1 > dice2:
+            winner = challenger
+            loser = opponent
+        elif dice2 > dice1:
+            winner = opponent
+            loser = challenger
+        else:
+            # Ничья - случайный победитель
+            winner, loser = random.choice([
+                (challenger, opponent),
+                (opponent, challenger)
+            ])
+            result_text += "🎲 Ничья! Победитель определен случайно\n\n"
+
+        # Обновление балансов
+        users.update_one({"_id": winner["_id"]}, {
+            "$inc": {"balance": bet, "wins": 1}
+        })
+        users.update_one({"_id": loser["_id"]}, {
+            "$inc": {"balance": -bet}
+        })
+
+        result_text += (
+            f"🏆 Победитель: <b>@{winner['username']}</b>\n"
+            f"💰 Выигрыш: <b>+{fmt(bet)} ICE</b>"
+        )
+
+        bot.edit_message_text(
+            result_text,
+            c.message.chat.id,
+            c.message.message_id,
+            parse_mode="HTML"
+        )
+
+        # Удаление батла
+        battles.delete_one({"_id": b["_id"]})
+        
+        bot.answer_callback_query(c.id, "🎲 Батл завершен!")
+
+    except Exception as e:
+        logger.error(f"Ошибка place_bet: {e}")
+        bot.answer_callback_query(c.id, "❌ Произошла ошибка")
+
+# ---------- ADMIN ----------
+
+@bot.message_handler(commands=["admin"])
+def admin_panel(m):
+    """Админ-панель"""
+    if m.from
