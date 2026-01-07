@@ -11,7 +11,10 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 ADMIN = os.getenv("ADMIN_USERNAME")
-WEBHOOK = os.getenv("WEBHOOK_URL")
+WEBHOOK = os.getenv("WEBHOOK")
+
+bot.remove_webhook()
+bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
 
 bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
