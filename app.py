@@ -652,15 +652,14 @@ def place_bet(c):
             parse_mode="HTML"
         )
 
-        # Удаление батла
+                # Удаление батла
         battles.delete_one({"_id": b["_id"]})
-        
         bot.answer_callback_query(c.id, "🎲 Батл завершен!")
 
     except Exception as e:
-        logger.error(f"Ошибка place_bet: {e}")
-        bot.answer_callback_query(c.id, "❌ Произошла ошибка")
-
+        logger.error(f"Ошибка в финале батла: {e}")
+        bot.answer_callback_query(c.id, "❌ Ошибка при завершении батла")
+        
 
 # ---------- ADMIN ----------
 
