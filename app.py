@@ -205,7 +205,7 @@ def farm(m):
     try:
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
             return
 
         now = int(time.time())
@@ -218,7 +218,8 @@ def farm(m):
             bot.send_message(
                 m.chat.id, 
                 f"⏳ Следующий фарм через: <b>{hours}ч {minutes}м</b>",
-                parse_mode="HTML"
+                parse_mode="HTML",
+                message_thread_id=m.message_thread_id # Добавлено
             )
             return
 
@@ -230,10 +231,17 @@ def farm(m):
             {"$set": {"farm": now, "balance": new_balance}}
         )
         
+        bot.send_message(
+            m.chat.id, 
+            f"❄️ Вы добыли <b>{gain} ICE</b>\n💰 Баланс: <b>{new_balance} ICE</b>",
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id # Добавлено
+        )
         
     except Exception as e:
         logger.error(f"Ошибка farm: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
+        
 
 # ---------- UPGRADE ----------
 
@@ -243,7 +251,7 @@ def upgrade(m):
     try:
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
             return
 
         price = upgrade_price(u["level"])
@@ -251,14 +259,9 @@ def upgrade(m):
         if u["balance"] < price:
             bot.send_message(
                 m.chat.id, 
-                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(u['ba        bot.send_message(
-            m.chat.id, 
-            f"❄️ Вы добыли <b>{gain} ICE</b>\n💰 Баланс: <b>{new_balance} ICE</b>",
-            parse_mode="HTML",
-            message_thread_id=m.message_thread_id # Добавлено
-        )
-lance'])} ICE</b>",
-                parse_mode="HTML"
+                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(u['balance'])} ICE</b>",
+                parse_mode="HTML",
+                message_thread_id=m.message_thread_id # Добавлено
             )
             return
 
@@ -266,12 +269,7 @@ lance'])} ICE</b>",
         new_balance = fmt(u["balance"] - price)
         new_farm_amount = farm_amount(new_level)
 
-        users.update_one(
-            {"_id": u["_id"]},
-            {
-                "$set": {"balance": new_balance, "level": new_level}
-            }
-        )
+        users.update_one({"_id": u["_id"]}, {"$set": {"balance": new_balance, "level": new_level}})
         
         bot.send_message(
             m.chat.id,
@@ -279,11 +277,12 @@ lance'])} ICE</b>",
             f"⛏ Новый уровень: <b>{new_level}</b>\n"
             f"📈 Добыча за фарм: <b>{new_farm_amount} ICE</b>\n"
             f"💰 Остаток: <b>{new_balance} ICE</b>",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id # Добавлено
         )
     except Exception as e:
         logger.error(f"Ошибка upgrade: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
 
 # ---------- SEND ----------
 
@@ -470,7 +469,8 @@ def battle(m):
             f"⚔️ <b>ВЫЗОВ НА БАТЛ!</b>\n\n"
             f"@{challenger.username} вызывает @{opponent.username or opponent.id}",
             reply_markup=kb,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id # Чтобы сообщение появилось в теме
         )
 
     except Exception as e:
