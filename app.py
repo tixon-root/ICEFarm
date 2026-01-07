@@ -13,11 +13,13 @@ MONGO_URI = os.getenv("MONGO_URI")
 ADMIN = os.getenv("ADMIN_USERNAME")
 WEBHOOK = os.getenv("WEBHOOK")
 
-bot.remove_webhook()
-bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
-
 bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
+
+# ⚠️ ВАЖНО: сначала создаём bot, потом webhook
+bot.remove_webhook()
+time.sleep(1)
+bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
 
 db = MongoClient(MONGO_URI)["icecoin"]
 users = db.users
