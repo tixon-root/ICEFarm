@@ -148,12 +148,14 @@ def start(m):
 
 <i>Выберите действие из меню:</i>
 """
-        bot.send_message(
+                bot.send_message(
             m.chat.id, 
             txt, 
             reply_markup=create_main_keyboard(),
-            parse_mode="HTML"
-        )
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id # Добавлено
+)
+        
     except Exception as e:
         logger.error(f"Ошибка start: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка")
