@@ -650,6 +650,7 @@ def place_bet(c):
         logger.error(f"Ошибка place_bet: {e}")
         bot.answer_callback_query(c.id, "❌ Произошла ошибка")
 
+
 # ---------- ADMIN ----------
 
 @bot.message_handler(commands=["admin"])
@@ -658,11 +659,14 @@ def admin_panel(m):
     if m.from_user.username != ADMIN:
         return
     
-    total_users = users.count_documents({})
-    total_ice = list(users.aggregate([{"$group": {"_id": None, "total": {"$sum": "$balance"}}}]))
-    total_sum = total_ice[0]['total'] if total_ice else 0
-    
-    txt = f"""
+    try:
+        total_users = users.count_documents({})
+        # Агрегация для подсчета общей суммы монет
+        pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance"}}}]
+        result = list(users.aggregate(pipeline))
+        total_sum = result[0]['total'] if result else 0
+        
+        txt = f"""
 👑 <b>АДМИН-ПАНЕЛЬ</b>
 
 👥 Всего пользователей: <b>{total_users}</b>
@@ -670,12 +674,15 @@ def admin_panel(m):
 
 <b>Команды:</b>
 /stats ID — Статистика игрока
-/broadcast ТЕКСТ — Рассылка
+/broadcast ТЕКСТ — Рассылка всем
 """
-    bot.send_message(m.chat.id, txt, parse_mode="HTML")
+        bot.send_message(m.chat.id, txt, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Ошибка в админ-панели: {e}")
 
 @bot.message_handler(commands=["stats"])
 def stats(m):
+    """Статистика конкретного пользователя (только для админа)"""
     if m.from_user.username != ADMIN:
         return
     try:
@@ -684,35 +691,73 @@ def stats(m):
             bot.send_message(m.chat.id, "Использование: /stats ID")
             return
         
-        user = users.find_one({"_id": int(parts[1])})
+        target_id = int(parts[1])
+        user = users.find_one({"_id": target_id})
+        
         if not user:
             bot.send_message(m.chat.id, "❌ Пользователь не найден")
             return
             
-        txt = f"📊 @{user['username']} | Баланс: {user['balance']} | Lvl: {user['level']}"
-        bot.send_message(m.chat.id, txt)
-    except:
-        bot.send_message(m.chat.id, "❌ Ошибка в ID")
+        txt = f"""
+📊 <b>Статистика @{user.get('username', 'N/A')}</b>
+🆔 ID: <code>{user['_id']}</code>
+💰 Баланс: {fmt(user['balance'])} ICE
+⛏ Уровень: {user['level']}
+🏆 Побед: {user.get('wins', 0)}
+"""
+        bot.send_message(m.chat.id, txt, parse_mode="HTML")
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ Ошибка: {e}")
+
+@bot.message_handler(commands=["broadcast"])
+def broadcast(m):
+    """Рассылка сообщения всем пользователям"""
+    if m.from_user.username != ADMIN:
+        return
+    
+    text = m.text.replace("/broadcast", "").strip()
+    if not text:
+        bot.send_message(m.chat.id, "Введите текст после команды /broadcast")
+        return
+
+    all_users = users.find({}, {"_id": 1})
+    count = 0
+    for user in all_users:
+        try:
+            bot.send_message(user["_id"], f"📢 <b>ОБЪЯВЛЕНИЕ:</b>\n\n{text}", parse_mode="HTML")
+            count += 1
+            time.sleep(0.05) # Защита от спам-фильтра Telegram
+        except:
+            continue
+    
+    bot.send_message(m.chat.id, f"✅ Рассылка завершена. Получили: {count} чел.")
+
+# ---------- ERROR HANDLER ----------
+
+@bot.message_handler(func=lambda m: True)
+def echo_all(m):
+    """Ответ на неизвестные сообщения"""
+    bot.send_message(m.chat.id, "❓ Неизвестная команда. Используйте /start или /help")
 
 # ---------- RUN ----------
 
 if __name__ == "__main__":
-    import threading
+    logger.info("Запуск ICECOIN...")
     
-    # Функция для запуска Flask (Webhook)
-    def run_flask():
-        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-    # Если вы используете Webhook (на сервере)
+    # На Render переменная WEBHOOK должна содержать https://ваш-домен.onrender.com
     if WEBHOOK and "http" in WEBHOOK:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
-        logger.info("Бот запущен через Webhook")
-        run_flask()
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
+            logger.info(f"Webhook установлен: {WEBHOOK}/{TOKEN}")
+            # Порт для Render берется из переменной окружения
+            port = int(os.environ.get("PORT", 10000))
+            app.run(host="0.0.0.0", port=port)
+        except Exception as e:
+            logger.error(f"Ошибка при установке Webhook: {e}")
     else:
-        # Если запускаете локально (без Webhook)
-        logger.info("Бот запущен через Polling")
+        logger.info("Запуск через Long Polling (локально)...")
         bot.remove_webhook()
         bot.infinity_polling()
-        
+                             
