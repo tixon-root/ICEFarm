@@ -129,15 +129,17 @@ def set_webhook():
 
 # ---------- START ----------
 
-# ---------- START ----------
-
 @bot.message_handler(commands=["start"])
 def start(m):
     """Команда /start"""
     try:
+        # ПРОВЕРКА: Если это не личные сообщения (private), бот просто игнорирует команду
+        if m.chat.type != "private":
+            return 
+
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
             return
 
         txt = f"""
@@ -151,18 +153,18 @@ def start(m):
 
 <i>Выберите действие из меню:</i>
 """
-        # ТУТ БЫЛА ОШИБКА: Убери все лишние пробелы перед bot
+        # Кнопки (ReplyKeyboardMarkup) отправляются только здесь
         bot.send_message(
             m.chat.id, 
             txt, 
             reply_markup=create_main_keyboard(),
-            parse_mode="HTML",
-            message_thread_id=m.message_thread_id
+            parse_mode="HTML"
         )
         
     except Exception as e:
         logger.error(f"Ошибка start: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
+        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+        
 
 # ---------- PROFILE ----------
 
