@@ -753,7 +753,7 @@ def broadcast(m):
 def admin_give(m):
     """Начислить монеты (только для админа)"""
     # Замени 12345678 на свой реальный ID
-    ADMIN_ID = 12345678 
+    ADMIN_ID = 6395348885 
     
     if m.from_user.id != ADMIN_ID:
         bot.send_message(m.chat.id, "❌ У вас нет прав администратора!", message_thread_id=m.message_thread_id)
