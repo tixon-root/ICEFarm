@@ -230,11 +230,7 @@ def farm(m):
             {"$set": {"farm": now, "balance": new_balance}}
         )
         
-        bot.send_message(
-            m.chat.id, 
-            f"❄️ Вы добыли <b>{gain} ICE</b>\n💰 Баланс: <b>{new_balance} ICE</b>",
-            parse_mode="HTML"
-        )
+        
     except Exception as e:
         logger.error(f"Ошибка farm: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка")
@@ -255,7 +251,13 @@ def upgrade(m):
         if u["balance"] < price:
             bot.send_message(
                 m.chat.id, 
-                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(u['balance'])} ICE</b>",
+                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(u['ba        bot.send_message(
+            m.chat.id, 
+            f"❄️ Вы добыли <b>{gain} ICE</b>\n💰 Баланс: <b>{new_balance} ICE</b>",
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id # Добавлено
+        )
+lance'])} ICE</b>",
                 parse_mode="HTML"
             )
             return
