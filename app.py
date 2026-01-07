@@ -747,6 +747,45 @@ def broadcast(m):
     
     bot.send_message(m.chat.id, f"✅ Рассылка завершена. Получили: {count} чел.")
 
+# ---------- ADMIN COMMANDS ----------
+
+@bot.message_handler(commands=["give"])
+def admin_give(m):
+    """Начислить монеты (только для админа)"""
+    # Замени 12345678 на свой реальный ID
+    ADMIN_ID = 12345678 
+    
+    if m.from_user.id != ADMIN_ID:
+        bot.send_message(m.chat.id, "❌ У вас нет прав администратора!", message_thread_id=m.message_thread_id)
+        return
+
+    try:
+        parts = m.text.split()
+        if len(parts) != 3:
+            bot.send_message(m.chat.id, "🔧 Формат: `/give ID СУММА`", parse_mode="Markdown", message_thread_id=m.message_thread_id)
+            return
+
+        to_id = int(parts[1])
+        amount = float(parts[2])
+
+        # Начисляем монеты в базе
+        result = users.update_one({"_id": to_id}, {"$inc": {"balance": amount}})
+
+        if result.matched_count > 0:
+            bot.send_message(m.chat.id, f"✅ Успешно начислено **{amount} ICE** пользователю `{to_id}`", parse_mode="Markdown", message_thread_id=m.message_thread_id)
+            # Уведомляем счастливчика
+            try:
+                bot.send_message(to_id, f"🎁 Админ начислил вам **{amount} ICE**!", parse_mode="Markdown")
+            except:
+                pass
+        else:
+            bot.send_message(m.chat.id, "❌ Пользователь не найден в базе!", message_thread_id=m.message_thread_id)
+
+    except Exception as e:
+        logger.error(f"Ошибка give: {e}")
+        bot.send_message(m.chat.id, "❌ Ошибка при выполнении команды", message_thread_id=m.message_thread_id)
+        
+
 # ---------- ERROR HANDLER ----------
 
 @bot.message_handler(func=lambda m: True)
