@@ -655,4 +655,64 @@ def place_bet(c):
 @bot.message_handler(commands=["admin"])
 def admin_panel(m):
     """Админ-панель"""
-    if m.from
+    if m.from_user.username != ADMIN:
+        return
+    
+    total_users = users.count_documents({})
+    total_ice = list(users.aggregate([{"$group": {"_id": None, "total": {"$sum": "$balance"}}}]))
+    total_sum = total_ice[0]['total'] if total_ice else 0
+    
+    txt = f"""
+👑 <b>АДМИН-ПАНЕЛЬ</b>
+
+👥 Всего пользователей: <b>{total_users}</b>
+💰 Всего монет в обороте: <b>{fmt(total_sum)} ICE</b>
+
+<b>Команды:</b>
+/stats ID — Статистика игрока
+/broadcast ТЕКСТ — Рассылка
+"""
+    bot.send_message(m.chat.id, txt, parse_mode="HTML")
+
+@bot.message_handler(commands=["stats"])
+def stats(m):
+    if m.from_user.username != ADMIN:
+        return
+    try:
+        parts = m.text.split()
+        if len(parts) < 2:
+            bot.send_message(m.chat.id, "Использование: /stats ID")
+            return
+        
+        user = users.find_one({"_id": int(parts[1])})
+        if not user:
+            bot.send_message(m.chat.id, "❌ Пользователь не найден")
+            return
+            
+        txt = f"📊 @{user['username']} | Баланс: {user['balance']} | Lvl: {user['level']}"
+        bot.send_message(m.chat.id, txt)
+    except:
+        bot.send_message(m.chat.id, "❌ Ошибка в ID")
+
+# ---------- RUN ----------
+
+if __name__ == "__main__":
+    import threading
+    
+    # Функция для запуска Flask (Webhook)
+    def run_flask():
+        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+    # Если вы используете Webhook (на сервере)
+    if WEBHOOK and "http" in WEBHOOK:
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
+        logger.info("Бот запущен через Webhook")
+        run_flask()
+    else:
+        # Если запускаете локально (без Webhook)
+        logger.info("Бот запущен через Polling")
+        bot.remove_webhook()
+        bot.infinity_polling()
+        
