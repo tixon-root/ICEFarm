@@ -382,7 +382,7 @@ def top(m):
         top_users = list(users.find().sort("balance", -1).limit(10))
         
         if not top_users:
-            bot.send_message(m.chat.id, "📊 Топ пока пуст!")
+            bot.send_message(m.chat.id, "📊 Топ пока пуст!", message_thread_id=m.message_thread_id)
             return
 
         txt = "🏆 <b>ТОП-10 ИГРОКОВ</b>\n\n"
@@ -392,10 +392,11 @@ def top(m):
             medal = medals[i-1] if i <= 3 else f"{i}."
             txt += f"{medal} @{u['username']} — <b>{fmt(u['balance'])} ICE</b>\n"
         
-        bot.send_message(m.chat.id, txt, parse_mode="HTML")
+        bot.send_message(m.chat.id, txt, parse_mode="HTML", message_thread_id=m.message_thread_id)
     except Exception as e:
         logger.error(f"Ошибка top: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
+        
 
 # ---------- BATTLE ----------
 
