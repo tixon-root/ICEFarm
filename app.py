@@ -89,7 +89,7 @@ def create_main_keyboard():
     """Создание главной клавиатуры"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add("⛏ Фарм", "⏫ Улучшить")
-    kb.add("🏆 Топ", "⚔ Батл")
+    kb.add("🏆 Топ")
     kb.add("💸 Отправить", "👤 Профиль")
     return kb
 
@@ -410,8 +410,8 @@ def top(m):
         
 
 
-# --- Команда вызова на батл ---
-@bot.message_handler(commands=["battle"])
+# --- блок11---
+@bot.message_handler(commands=["batle"])
 def battle_call(m):
     if not m.reply_to_message:
         bot.send_message(m.chat.id, "❌ Ответьте на сообщение игрока!", message_thread_id=m.message_thread_id)
