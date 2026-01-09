@@ -234,7 +234,7 @@ def profile(m):
 
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
 def farm(m):
-    """Добыча монет"""
+    if not is_subscribed(m): return # ДОБАВИТЬ ЭТО
     try:
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
