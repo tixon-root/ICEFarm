@@ -319,92 +319,70 @@ def upgrade(m):
 
 # ---------- SEND ----------
 
-@bot.message_handler(func=lambda m: m.text == "💸 Отправить")
-def send_menu(m):
-    """Меню отправки"""
-    bot.send_message(
-        m.chat.id,
-        "💸 <b>Отправка ICE</b>\n\n"
-        "Используйте команду:\n"
-        "<code>/send ID СУММА</code>\n\n"
-        "Пример: <code>/send 123456789 10</code>",
-        parse_mode="HTML"
-    )
-
 @bot.message_handler(commands=["send"])
 def send(m):
-    """Отправка монет другому пользователю"""
+    """Отправка монет (поддерживает Reply и прямую команду)"""
+    if not is_subscribed(m): return
+
     try:
         parts = m.text.split()
-        if len(parts) != 3:
-            bot.send_message(
-                m.chat.id,
-                "❌ Неверный формат!\nИспользуйте: <code>/send ID СУММА</code>",
-                parse_mode="HTML"
-            )
-            return
+        to_id = None
+        amount = 0.0
 
-        try:
+        # Если это ответ на сообщение (в группе)
+        if m.reply_to_message:
+            if len(parts) < 2:
+                bot.reply_to(m, f"❌ Укажите сумму.\nПример: <code>/send 10</code>", parse_mode="HTML")
+                return
+            to_id = m.reply_to_message.from_user.id
+            amount = float(parts[1])
+        
+        # Если это обычная команда /send ID СУММА
+        else:
+            if len(parts) < 3:
+                bot.send_message(m.chat.id, "❌ Формат: <code>/send ID СУММА</code>", parse_mode="HTML")
+                return
             to_id = int(parts[1])
             amount = float(parts[2])
-        except ValueError:
-            bot.send_message(m.chat.id, "❌ ID и сумма должны быть числами!")
-            return
 
         if amount <= 0:
-            bot.send_message(m.chat.id, "❌ Сумма должна быть больше 0!")
-            return
-
-        if amount < 0.01:
-            bot.send_message(m.chat.id, "❌ Минимальная сумма: 0.01 ICE")
+            bot.reply_to(m, "❌ Сумма должна быть больше 0.")
             return
 
         u = get_user(m.from_user.id, m.from_user.username)
-        if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных")
+        total_to_deduct = amount + FEE # Списываем сумму + комиссию
+
+        if u["balance"] < total_to_deduct:
+            bot.reply_to(m, f"❌ Недостаточно средств!\nНужно: <b>{fmt(total_to_deduct)}</b> (с комиссией {FEE})\nВаш баланс: <b>{fmt(u['balance'])}</b>", parse_mode="HTML")
             return
 
-        if u["_id"] == to_id:
-            bot.send_message(m.chat.id, "❌ Нельзя отправить себе!")
-            return
-
-        if u["balance"] < amount:
-            bot.send_message(
-                m.chat.id,
-                f"❌ Недостаточно средств!\nУ вас: <b>{fmt(u['balance'])} ICE</b>",
-                parse_mode="HTML"
-            )
-            return
-
-        # Проверка существования получателя
         recipient = users.find_one({"_id": to_id})
         if not recipient:
-            bot.send_message(m.chat.id, "❌ Пользователь не найден!")
+            bot.reply_to(m, "❌ Получатель не найден в базе бота.")
             return
 
-        # Транзакция
-        users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -amount}})
+        if m.from_user.id == to_id:
+            bot.reply_to(m, "❌ Нельзя отправить себе.")
+            return
+
+        # Проведение транзакции
+        users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -total_to_deduct}})
         users.update_one({"_id": to_id}, {"$inc": {"balance": amount}})
 
         bot.send_message(
             m.chat.id,
-            f"✅ Отправлено <b>{fmt(amount)} ICE</b> → @{recipient['username']}",
+            f"✅ <b>Перевод выполнен!</b>\n\n"
+            f"👤 От: @{u['username']}\n"
+            f"👤 Кому: @{recipient.get('username', to_id)}\n"
+            f"💰 Сумма: <b>{fmt(amount)} ICE</b>\n"
+            f"💳 Комиссия: <b>{FEE} ICE</b>",
             parse_mode="HTML"
         )
-        
-        # Уведомление получателю
-        try:
-            bot.send_message(
-                to_id,
-                f"💰 Вам пришло <b>{fmt(amount)} ICE</b> от @{u['username']}",
-                parse_mode="HTML"
-            )
-        except:
-            pass  # Получатель мог заблокировать бота
-
+    except (ValueError, IndexError):
+        bot.reply_to(m, "❌ Ошибка! Проверьте сумму или ID.")
     except Exception as e:
         logger.error(f"Ошибка send: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка при отправке")
+        
 
 # ---------- TOP ----------
 
