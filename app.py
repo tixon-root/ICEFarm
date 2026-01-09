@@ -85,6 +85,28 @@ def fmt(x):
     """Форматирование числа"""
     return round(float(x), 2)
 
+def check_sub(user_id):
+    """Проверка подписки на канал"""
+    try:
+        # Важно: Бот должен быть админом в канале!
+        status = bot.get_chat_member(CHANNEL_ID, user_id).status
+        return status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logger.error(f"Ошибка проверки подписки: {e}")
+        return True # Если ошибка, пускаем пользователя, чтобы бот не «висел»
+
+def is_subscribed(m):
+    """Вспомогательная функция для хендлеров"""
+    if not check_sub(m.from_user.id):
+        bot.send_message(
+            m.chat.id, 
+            f"❌ <b>Доступ ограничен!</b>\n\nЧтобы играть, подпишитесь на наш канал: {CHANNEL_ID}",
+            parse_mode="HTML"
+        )
+        return False
+    return True
+    
+
 def create_main_keyboard():
     """Создание главной клавиатуры"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
