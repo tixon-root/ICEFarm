@@ -50,6 +50,9 @@ except Exception as e:
     raise
 
 FARM_CD = 10800  # 3 часа
+CHANNEL_ID = "@BANCUS_RUCOY" # Канал для подписки
+FEE = 0.1 # Комиссия за перевод
+
 
 # ---------- UTILS ----------
 
