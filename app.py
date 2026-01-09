@@ -369,6 +369,7 @@ def send(m):
         users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -total_to_deduct}})
         users.update_one({"_id": to_id}, {"$inc": {"balance": amount}})
 
+        # ПОДТВЕРЖДЕНИЕ В ТУ ЖЕ ТЕМУ/ЧАТ
         bot.send_message(
             m.chat.id,
             f"✅ <b>Перевод выполнен!</b>\n\n"
@@ -376,12 +377,9 @@ def send(m):
             f"👤 Кому: @{recipient.get('username', to_id)}\n"
             f"💰 Сумма: <b>{fmt(amount)} ICE</b>\n"
             f"💳 Комиссия: <b>{FEE} ICE</b>",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id  # Добавляем этот параметр!
         )
-    except (ValueError, IndexError):
-        bot.reply_to(m, "❌ Ошибка! Проверьте сумму или ID.")
-    except Exception as e:
-        logger.error(f"Ошибка send: {e}")
         
 
 # ---------- TOP ----------
