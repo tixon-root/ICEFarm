@@ -378,13 +378,12 @@ def send(m):
             f"💰 Сумма: <b>{fmt(amount)} ICE</b>\n"
             f"💳 Комиссия: <b>{FEE} ICE</b>",
             parse_mode="HTML",
-            message_thread_id=m.message_thread_id  # Добавляем этот параметр!
+            message_thread_id=m.message_thread_id
         )
 
-        except Exception as e:
-            logger.error(f"Ошибка в функции send: {e}")
-            bot.reply_to(m, "❌ Произошла ошибка при выполнении перевода.")
-
+    except Exception as e:
+        logger.error(f"Ошибка в функции send: {e}")
+        bot.reply_to(m, "❌ Произошла ошибка при выполнении перевода.")
         
 # ---------- TOP ----------
 
