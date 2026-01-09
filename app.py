@@ -381,9 +381,9 @@ def send(m):
             message_thread_id=m.message_thread_id  # Добавляем этот параметр!
         )
 
-except Exception as e:
-        logger.error(f"Ошибка в функции send: {e}")
-        bot.reply_to(m, "❌ Произошла ошибка при выполнении перевода.")
+        except Exception as e:
+            logger.error(f"Ошибка в функции send: {e}")
+            bot.reply_to(m, "❌ Произошла ошибка при выполнении перевода.")
 
         
 # ---------- TOP ----------
