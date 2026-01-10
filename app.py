@@ -394,32 +394,31 @@ def send(m):
 
 @bot.message_handler(func=lambda m: m.text == "🏆 Топ" or m.text == "/top")
 def top(m):
-    # Проверка обязательной подписки
+    # Проверка подписки
     if not is_subscribed(m): return
     
     try:
-        # Получаем 10 самых богатых игроков
+        # Получаем 10 самых богатых
         top_users = users.find().sort("balance", -1).limit(10)
         
-        text = "🏆 <b>ТОП-10 ИГРОКОВ ICE Coin</b>\n"
-        text += "<i>(Список самых богатых майнеров)</i>\n\n"
+        text = "🏆 <b>ТОП-10 ИГРОКОВ</b>\n\n"
+        
+        # Медали для красоты, как в старой версии
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         
         for i, user in enumerate(top_users, 1):
-            # Берем username. Если его нет — используем ID.
-            # Мы НЕ делаем ссылку на профиль, чтобы не тегать игрока.
-            name = user.get("username")
-            if not name:
-                name = f"User_{str(user['_id'])[:5]}" # Берем часть ID если нет ника
-            else:
-                name = f"@{name}"
+            # Используем имя (first_name). Это просто текст, он НЕ ТЕГАЕТ.
+            # Если имени нет, используем username, но без символа @
+            name = user.get("first_name") or user.get("username") or "Игрок"
             
-            # Формируем строку: Место. Имя — Баланс
-            text += f"{i}. 👤 <b>{name}</b> — 💰 <code>{fmt(user['balance'])}</code> ICE\n"
+            # Убираем символ @, если он случайно остался в имени, чтобы точно не было тега
+            name = name.replace("@", "") 
+            
+            prefix = medals.get(i, f"{i}.")
+            
+            # Стиль: Медаль/Цифра Имя — Баланс ICE
+            text += f"{prefix} {name} — {fmt(user['balance'])} ICE\n"
         
-        if not text:
-            text = "К сожалению, в базе пока нет игроков."
-
-        # Отправляем сообщение в ту же тему, где была вызвана команда
         bot.send_message(
             m.chat.id, 
             text, 
@@ -428,8 +427,8 @@ def top(m):
         )
         
     except Exception as e:
-        logger.error(f"Ошибка в функции TOP: {e}")
-        bot.reply_to(m, "❌ Не удалось загрузить топ игроков.")
+        logger.error(f"Ошибка в ТОП: {e}")
+        bot.reply_to(m, "❌ Ошибка загрузки топа.")
 
 # ---------- BATTLE ----------
         
