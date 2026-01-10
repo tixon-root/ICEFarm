@@ -394,26 +394,42 @@ def send(m):
 
 @bot.message_handler(func=lambda m: m.text == "🏆 Топ" or m.text == "/top")
 def top(m):
-    """Топ игроков по балансу"""
+    # Проверка обязательной подписки
+    if not is_subscribed(m): return
+    
     try:
-        top_users = list(users.find().sort("balance", -1).limit(10))
+        # Получаем 10 самых богатых игроков
+        top_users = users.find().sort("balance", -1).limit(10)
         
-        if not top_users:
-            bot.send_message(m.chat.id, "📊 Топ пока пуст!", message_thread_id=m.message_thread_id)
-            return
+        text = "🏆 <b>ТОП-10 ИГРОКОВ ICE Coin</b>\n"
+        text += "<i>(Список самых богатых майнеров)</i>\n\n"
+        
+        for i, user in enumerate(top_users, 1):
+            # Берем username. Если его нет — используем ID.
+            # Мы НЕ делаем ссылку на профиль, чтобы не тегать игрока.
+            name = user.get("username")
+            if not name:
+                name = f"User_{str(user['_id'])[:5]}" # Берем часть ID если нет ника
+            else:
+                name = f"@{name}"
+            
+            # Формируем строку: Место. Имя — Баланс
+            text += f"{i}. 👤 <b>{name}</b> — 💰 <code>{fmt(user['balance'])}</code> ICE\n"
+        
+        if not text:
+            text = "К сожалению, в базе пока нет игроков."
 
-        txt = "🏆 <b>ТОП-10 ИГРОКОВ</b>\n\n"
-        medals = ["🥇", "🥈", "🥉"]
+        # Отправляем сообщение в ту же тему, где была вызвана команда
+        bot.send_message(
+            m.chat.id, 
+            text, 
+            parse_mode="HTML", 
+            message_thread_id=m.message_thread_id
+        )
         
-        for i, u in enumerate(top_users, 1):
-            medal = medals[i-1] if i <= 3 else f"{i}."
-            txt += f"{medal} @{u['username']} — <b>{fmt(u['balance'])} ICE</b>\n"
-        
-        bot.send_message(m.chat.id, txt, parse_mode="HTML", message_thread_id=m.message_thread_id)
     except Exception as e:
-        logger.error(f"Ошибка top: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
-        
+        logger.error(f"Ошибка в функции TOP: {e}")
+        bot.reply_to(m, "❌ Не удалось загрузить топ игроков.")
 
 # ---------- BATTLE ----------
         
