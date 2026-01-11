@@ -628,27 +628,46 @@ def stats(m):
 
 @bot.message_handler(commands=["broadcast"])
 def broadcast(m):
-    """Рассылка сообщения всем пользователям"""
-    if m.from_user.username != ADMIN:
-        return
-    
-    text = m.text.replace("/broadcast", "").strip()
-    if not text:
-        bot.send_message(m.chat.id, "Введите текст после команды /broadcast")
+    # Проверка, что пишет админ (замени 12345678 на свой ID)
+    if m.from_user.id != 6395348885:
         return
 
-    all_users = users.find({}, {"_id": 1})
+    # Просим админа прислать пост
+    msg = bot.reply_to(m, "Введите текст объявления или пришлите фото с описанием. Для отмены напишите /cancel")
+    bot.register_next_step_handler(msg, start_broadcast)
+
+def start_broadcast(m):
+    if m.text == "/cancel":
+        bot.send_message(m.chat.id, "Рассылка отменена.")
+        return
+
+    all_users = users.find()
     count = 0
+    
     for user in all_users:
         try:
-            bot.send_message(user["_id"], f"📢 <b>ОБЪЯВЛЕНИЕ:</b>\n\n{text}", parse_mode="HTML")
+            # Если админ прислал ФОТО
+            if m.content_type == 'photo':
+                bot.send_photo(
+                    user["_id"], 
+                    m.photo[-1].file_id, 
+                    caption=m.caption, 
+                    parse_mode="HTML"
+                )
+            # Если админ прислал только ТЕКСТ
+            elif m.content_type == 'text':
+                bot.send_message(
+                    user["_id"], 
+                    m.text, 
+                    parse_mode="HTML", 
+                    disable_web_page_preview=False
+                )
             count += 1
-            time.sleep(0.05) # Защита от спам-фильтра Telegram
-        except:
-            continue
-    
-    bot.send_message(m.chat.id, f"✅ Рассылка завершена. Получили: {count} чел.")
+        except Exception:
+            continue # Пропускаем, если бот заблокирован пользователем
 
+    bot.send_message(m.chat.id, f"✅ Рассылка завершена! Получили: {count} чел.")
+    
 # ---------- ADMIN COMMANDS ----------
 
 @bot.message_handler(commands=["give"])
