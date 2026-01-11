@@ -319,17 +319,16 @@ def upgrade(m):
 
 # ---------- SEND ----------
 
-@bot.message_handler(commands=["send"])
+@bot.message_handler(func=lambda m: m.text == "💸 Отправить" or m.text == "/send")
 def send_command(m):
     if not is_subscribed(m): return
 
-    # Проверка: если команда отправлена в ГРУППЕ или СУПЕРГРУППЕ
+    # Проверка: если в группе — только REPLY
     if m.chat.type in ["group", "supergroup"]:
         if not m.reply_to_message:
             bot.reply_to(m, "⚠️ <b>В чате отправить ICE можно только ответом на сообщение!</b>\n\nПросто ответьте пользователю командой: <code>/send [сумма]</code>", parse_mode="HTML")
             return
         
-        # Если это ответ, обрабатываем как раньше
         try:
             parts = m.text.split()
             if len(parts) < 2:
@@ -341,29 +340,26 @@ def send_command(m):
         except ValueError:
             bot.reply_to(m, "❌ Сумма должна быть числом.")
     
-    # Если команда отправлена в ЛИЧКЕ у бота
+    # Если в личке — пошаговый диалог
     else:
         msg = bot.send_message(m.chat.id, "Введите ID пользователя, которому хотите отправить ICE:")
         bot.register_next_step_handler(msg, process_get_id)
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ЛИЧКИ ---
-
+# Эти функции должны идти СРАЗУ под send_command
 def process_get_id(m):
     try:
         to_id = int(m.text)
         msg = bot.send_message(m.chat.id, f"Вы отправляете пользователю <code>{to_id}</code>. Введите сумму:")
         bot.register_next_step_handler(msg, lambda message: process_get_amount(message, to_id))
     except ValueError:
-        bot.send_message(m.chat.id, "❌ ID должен состоять только из цифр. Попробуйте снова /send")
+        bot.send_message(m.chat.id, "❌ ID должен состоять только из цифр. Попробуйте снова.")
 
 def process_get_amount(m, to_id):
     try:
         amount = float(m.text.replace(',', '.'))
         process_transfer(m, to_id, amount)
     except ValueError:
-        bot.send_message(m.chat.id, "❌ Сумма должна быть числом. Попробуйте снова /send")
-
-# --- ЕДИНАЯ ЛОГИКА ПЕРЕВОДА ---
+        bot.send_message(m.chat.id, "❌ Сумма должна быть числом. Попробуйте снова.")
 
 def process_transfer(m, to_id, amount):
     if amount <= FEE:
@@ -387,7 +383,6 @@ def process_transfer(m, to_id, amount):
 
     amount_to_receive = round(amount - FEE, 8)
 
-    # Проведение транзакции
     users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -amount}})
     users.update_one({"_id": to_id}, {"$inc": {"balance": amount_to_receive}})
 
@@ -395,13 +390,13 @@ def process_transfer(m, to_id, amount):
         m.chat.id,
         f"✅ <b>Перевод выполнен!</b>\n\n"
         f"👤 От: {u.get('first_name', 'Игрок')}\n"
-        f"👤 Кому: {recipient.get('first_name', to_id)}\n"
+        f"👤 Кому: {recipient.get('first_name', 'Игрок')}\n"
         f"💰 Списано: <b>{fmt(amount)} ICE</b>\n"
         f"📥 Получено: <b>{fmt(amount_to_receive)} ICE</b>\n"
         f"💳 Комиссия: <b>{FEE} ICE</b>",
         parse_mode="HTML",
-        message_thread_id=m.message_thread_id if hasattr(m, 'message_thread_id') else None
-                        )
+        message_thread_id=getattr(m, 'message_thread_id', None)
+    )
 
 # ---------- TOP ----------
 
