@@ -99,16 +99,16 @@ def check_sub(user_id):
         return True # Если ошибка, пускаем пользователя, чтобы бот не «висел»
 
 def is_subscribed(m):
-    """Вспомогательная функция для хендлеров"""
+    """Вспомогательная функция с ответом в нужную тему"""
     if not check_sub(m.from_user.id):
         bot.send_message(
             m.chat.id, 
             f"❌ <b>Доступ ограничен!</b>\n\nЧтобы играть, подпишитесь на наш канал: {CHANNEL_ID}",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id  # Это заставит бота писать в текущую тему
         )
         return False
     return True
-    
 
 def create_main_keyboard():
     """Создание главной клавиатуры"""
