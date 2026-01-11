@@ -317,104 +317,92 @@ def upgrade(m):
         logger.error(f"Ошибка upgrade: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
 
-# --- СИСТЕМА ПЕРЕВОДОВ ICE ---
+# --- ЕДИНЫЙ БЛОК ОТПРАВКИ ---
 
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
-def send_command(m):
+def handle_send_start(m):
     if not is_subscribed(m): return
 
-    # 1. ЛОГИКА ДЛЯ ГРУПП (Только через ответ на сообщение)
+    # ЛОГИКА ДЛЯ ГРУПП: Читаем сумму сразу из команды
     if m.chat.type in ["group", "supergroup"]:
         if not m.reply_to_message:
-            bot.reply_to(
-                m, 
-                "⚠️ <b>В чате отправить ICE можно только ответом на сообщение!</b>\n\n"
-                "Просто ответьте игроку командой: <code>/send [сумма]</code>", 
-                parse_mode="HTML"
-            )
+            bot.reply_to(m, "⚠️ В чате отправка только <b>ответом на сообщение</b>!\nПример: <code>/send 10</code>", parse_mode="HTML")
             return
         
-        try:
-            parts = m.text.split()
-            if len(parts) < 2:
-                bot.reply_to(m, "❌ Укажите сумму.\nПример: <code>/send 10</code>", parse_mode="HTML")
-                return
+        parts = m.text.split()
+        if len(parts) < 2:
+            bot.reply_to(m, "❌ Укажите сумму. Пример: <code>/send 10</code>", parse_mode="HTML")
+            return
             
+        try:
             amount = float(parts[1].replace(',', '.'))
-            # Вызываем перевод (ID берем из сообщения, на которое ответили)
-            process_transfer(m, m.reply_to_message.from_user.id, amount)
-        except (ValueError, IndexError):
-            bot.reply_to(m, "❌ Ошибка! Введите число.\nПример: <code>/send 10</code>", parse_mode="HTML")
-    
-    # 2. ЛОГИКА ДЛЯ ЛИЧКИ (Пошаговый ввод)
-    else:
-        msg = bot.send_message(m.chat.id, "👤 <b>Введите ID пользователя</b>, которому хотите отправить ICE:")
-        bot.register_next_step_handler(msg, process_get_id)
+            # Выполняем перевод
+            execute_money_transfer(m, m.reply_to_message.from_user.id, amount)
+        except ValueError:
+            bot.reply_to(m, "❌ Сумма должна быть числом.")
 
-def process_get_id(m):
-    # Если пользователь ввел команду вместо ID, отменяем шаг
+    # ЛОГИКА ДЛЯ ЛИЧКИ: Пошаговый запрос
+    else:
+        msg = bot.send_message(m.chat.id, "👤 <b>Введите ID получателя:</b>", parse_mode="HTML")
+        bot.register_next_step_handler(msg, ask_for_amount)
+
+def ask_for_amount(m):
+    # Если юзер нажал другую кнопку или ввел команду — отменяем
     if not m.text or m.text.startswith('/'): return 
     
     try:
         to_id = int(m.text)
-        msg = bot.send_message(m.chat.id, f"✅ Получатель: <code>{to_id}</code>\n💰 <b>Введите сумму перевода:</b>", parse_mode="HTML")
-        bot.register_next_step_handler(msg, lambda message: process_get_amount(message, to_id))
+        msg = bot.send_message(m.chat.id, f"✅ Получатель: <code>{to_id}</code>\n💰 <b>Введите сумму:</b>", parse_mode="HTML")
+        bot.register_next_step_handler(msg, lambda message: finalize_send(message, to_id))
     except ValueError:
-        bot.send_message(m.chat.id, "❌ ID должен состоять только из цифр.\nНажмите «💸 Отправить» еще раз для новой попытки.")
+        bot.send_message(m.chat.id, "❌ ID должен быть из цифр. Попробуйте нажать кнопку снова.")
 
-def process_get_amount(m, to_id):
+def finalize_send(m, to_id):
     if not m.text or m.text.startswith('/'): return
     
     try:
         amount = float(m.text.replace(',', '.'))
-        process_transfer(m, to_id, amount)
+        execute_money_transfer(m, to_id, amount)
     except ValueError:
-        bot.send_message(m.chat.id, "❌ Сумма должна быть числом.\nНажмите «💸 Отправить» еще раз.")
+        bot.send_message(m.chat.id, "❌ Ошибка в сумме. Попробуйте заново.")
 
-def process_transfer(m, to_id, amount):
-    """Ядро транзакции: проверка баланса и зачисление"""
+def execute_money_transfer(m, to_id, amount):
+    """Сама логика транзакции"""
     if amount <= FEE:
-        bot.reply_to(m, f"❌ Сумма должна быть больше комиссии ({FEE} ICE)")
+        bot.reply_to(m, f"❌ Минимум для отправки: {FEE + 0.1} ICE")
         return
 
-    # Получаем данные отправителя (с именем)
+    # Загружаем данные
     u = get_user(m.from_user.id, m.from_user.username, m.from_user.first_name)
     
-    # Проверка баланса с защитой от ошибок дробей
     if round(u["balance"], 8) < round(amount, 8):
-        bot.reply_to(
-            m, 
-            f"❌ <b>Недостаточно средств!</b>\nВаш баланс: <code>{fmt(u['balance'])}</code> ICE", 
-            parse_mode="HTML"
-        )
+        bot.reply_to(m, f"❌ Недостаточно ICE. Ваш баланс: {fmt(u['balance'])}")
         return
 
-    # Поиск получателя
     recipient = users.find_one({"_id": to_id})
     if not recipient:
-        bot.reply_to(m, "❌ Получатель не найден в базе бота.")
+        bot.reply_to(m, "❌ Игрок не найден в базе.")
         return
 
     if m.from_user.id == to_id:
-        bot.reply_to(m, "❌ Нельзя отправить самому себе.")
+        bot.reply_to(m, "❌ Нельзя слать самому себе.")
         return
 
-    # Рассчитываем чистую сумму (комиссия внутри)
-    amount_to_receive = round(amount - FEE, 8)
+    # Считаем
+    receive_net = round(amount - FEE, 8)
 
-    # Выполняем транзакцию в БД
+    # БД
     users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -amount}})
-    users.update_one({"_id": to_id}, {"$inc": {"balance": amount_to_receive}})
+    users.update_one({"_id": to_id}, {"$inc": {"balance": receive_net}})
 
-    # Чек об операции
+    # Уведомление
     bot.send_message(
         m.chat.id,
         f"✅ <b>Перевод выполнен!</b>\n\n"
-        f"👤 От: <b>{u.get('first_name', 'Игрок')}</b>\n"
-        f"👤 Кому: <b>{recipient.get('first_name', 'Игрок')}</b>\n"
-        f"💰 Списано: <b>{fmt(amount)} ICE</b>\n"
-        f"📥 Получено: <b>{fmt(amount_to_receive)} ICE</b>\n"
-        f"💳 Комиссия: <b>{FEE} ICE</b>",
+        f"👤 Кому: {recipient.get('first_name', 'Игрок')}\n"
+        f"💰 Списано: {fmt(amount)} ICE\n"
+        f"📥 Получено: {fmt(receive_net)} ICE\n"
+        f"💳 Комиссия: {FEE} ICE",
         parse_mode="HTML",
         message_thread_id=getattr(m, 'message_thread_id', None)
     )
@@ -461,8 +449,6 @@ def top(m):
         bot.reply_to(m, "❌ Ошибка загрузки топа.")
 
 # ---------- BATTLE ----------
-        
-
 
 # --- блок11---
 @bot.message_handler(commands=["batle"])
