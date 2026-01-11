@@ -320,75 +320,88 @@ def upgrade(m):
 # ---------- SEND ----------
 
 @bot.message_handler(commands=["send"])
-def send(m):
-    """Отправка монет (поддерживает Reply и прямую команду)"""
+def send_command(m):
     if not is_subscribed(m): return
 
-    try:
-        parts = m.text.split()
-        to_id = None
-        amount = 0.0
-
-        # Определяем ID получателя и сумму
-        if m.reply_to_message:
+    # Проверка: если команда отправлена в ГРУППЕ или СУПЕРГРУППЕ
+    if m.chat.type in ["group", "supergroup"]:
+        if not m.reply_to_message:
+            bot.reply_to(m, "⚠️ <b>В чате отправить ICE можно только ответом на сообщение!</b>\n\nПросто ответьте пользователю командой: <code>/send [сумма]</code>", parse_mode="HTML")
+            return
+        
+        # Если это ответ, обрабатываем как раньше
+        try:
+            parts = m.text.split()
             if len(parts) < 2:
                 bot.reply_to(m, "❌ Укажите сумму.\nПример: <code>/send 10</code>", parse_mode="HTML")
                 return
-            to_id = m.reply_to_message.from_user.id
+            
             amount = float(parts[1].replace(',', '.'))
-        else:
-            if len(parts) < 3:
-                bot.send_message(m.chat.id, "❌ Формат: <code>/send ID СУММА</code>", parse_mode="HTML")
-                return
-            to_id = int(parts[1])
-            amount = float(parts[2].replace(',', '.'))
+            process_transfer(m, m.reply_to_message.from_user.id, amount)
+        except ValueError:
+            bot.reply_to(m, "❌ Сумма должна быть числом.")
+    
+    # Если команда отправлена в ЛИЧКЕ у бота
+    else:
+        msg = bot.send_message(m.chat.id, "Введите ID пользователя, которому хотите отправить ICE:")
+        bot.register_next_step_handler(msg, process_get_id)
 
-        if amount <= FEE:
-            bot.reply_to(m, f"❌ Сумма должна быть больше комиссии ({FEE} ICE)")
-            return
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ЛИЧКИ ---
 
-        u = get_user(m.from_user.id, m.from_user.username)
-        
-        # ПРОВЕРКА БАЛАНСА (с округлением)
-        if round(u["balance"], 8) < round(amount, 8):
-            bot.reply_to(m, f"❌ Недостаточно средств!\nВаш баланс: <b>{fmt(u['balance'])} ICE</b>", parse_mode="HTML")
-            return
+def process_get_id(m):
+    try:
+        to_id = int(m.text)
+        msg = bot.send_message(m.chat.id, f"Вы отправляете пользователю <code>{to_id}</code>. Введите сумму:")
+        bot.register_next_step_handler(msg, lambda message: process_get_amount(message, to_id))
+    except ValueError:
+        bot.send_message(m.chat.id, "❌ ID должен состоять только из цифр. Попробуйте снова /send")
 
-        recipient = users.find_one({"_id": to_id})
-        if not recipient:
-            bot.reply_to(m, "❌ Получатель не найден в базе бота.")
-            return
+def process_get_amount(m, to_id):
+    try:
+        amount = float(m.text.replace(',', '.'))
+        process_transfer(m, to_id, amount)
+    except ValueError:
+        bot.send_message(m.chat.id, "❌ Сумма должна быть числом. Попробуйте снова /send")
 
-        if m.from_user.id == to_id:
-            bot.reply_to(m, "❌ Нельзя отправить самому себе.")
-            return
+# --- ЕДИНАЯ ЛОГИКА ПЕРЕВОДА ---
 
-        # РАСЧЕТ: получатель получит (сумма - комиссия)
-        amount_to_receive = round(amount - FEE, 8)
+def process_transfer(m, to_id, amount):
+    if amount <= FEE:
+        bot.reply_to(m, f"❌ Сумма должна быть больше комиссии ({FEE} ICE)")
+        return
 
-        # Проведение транзакции в базе
-        users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -amount}})
-        users.update_one({"_id": to_id}, {"$inc": {"balance": amount_to_receive}})
+    u = get_user(m.from_user.id, m.from_user.username, m.from_user.first_name)
+    
+    if round(u["balance"], 8) < round(amount, 8):
+        bot.reply_to(m, f"❌ Недостаточно средств!\nВаш баланс: <b>{fmt(u['balance'])} ICE</b>", parse_mode="HTML")
+        return
 
-        # ПОДТВЕРЖДЕНИЕ В ТУ ЖЕ ТЕМУ
-        bot.send_message(
-            m.chat.id,
-            f"✅ <b>Перевод выполнен!</b>\n\n"
-            f"👤 От: @{u['username']}\n"
-            f"👤 Кому: @{recipient.get('username', to_id)}\n"
-            f"💰 Списано: <b>{fmt(amount)} ICE</b>\n"
-            f"📥 Получено: <b>{fmt(amount_to_receive)} ICE</b>\n"
-            f"💳 Комиссия: <b>{FEE} ICE</b>",
-            parse_mode="HTML",
-            message_thread_id=m.message_thread_id
-        )
+    recipient = users.find_one({"_id": to_id})
+    if not recipient:
+        bot.reply_to(m, "❌ Получатель не найден в базе бота.")
+        return
 
-    except (ValueError, IndexError):
-        bot.reply_to(m, "❌ Ошибка! Проверьте сумму или ID пользователя.")
-    except Exception as e:
-        logger.error(f"Ошибка в функции send: {e}")
-        bot.reply_to(m, "❌ Произошла ошибка при выполнении перевода.")
-        
+    if m.from_user.id == to_id:
+        bot.reply_to(m, "❌ Нельзя отправить самому себе.")
+        return
+
+    amount_to_receive = round(amount - FEE, 8)
+
+    # Проведение транзакции
+    users.update_one({"_id": u["_id"]}, {"$inc": {"balance": -amount}})
+    users.update_one({"_id": to_id}, {"$inc": {"balance": amount_to_receive}})
+
+    bot.send_message(
+        m.chat.id,
+        f"✅ <b>Перевод выполнен!</b>\n\n"
+        f"👤 От: {u.get('first_name', 'Игрок')}\n"
+        f"👤 Кому: {recipient.get('first_name', to_id)}\n"
+        f"💰 Списано: <b>{fmt(amount)} ICE</b>\n"
+        f"📥 Получено: <b>{fmt(amount_to_receive)} ICE</b>\n"
+        f"💳 Комиссия: <b>{FEE} ICE</b>",
+        parse_mode="HTML",
+        message_thread_id=m.message_thread_id if hasattr(m, 'message_thread_id') else None
+                        )
 
 # ---------- TOP ----------
 
