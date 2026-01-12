@@ -698,7 +698,27 @@ def admin_give(m):
     except Exception as e:
         logger.error(f"Ошибка give: {e}")
         bot.send_message(m.chat.id, "❌ Ошибка при выполнении команды", message_thread_id=m.message_thread_id)
-        
+
+
+# Команда для установки курса (только для админа)
+@bot.message_handler(commands=["setprice"])
+def set_price(m):
+    if m.from_user.id != ADMIN_ID: return # Замени ADMIN_ID на свой ID
+    
+    try:
+        # Пример: /setprice 8000
+        new_price = m.text.split()[1]
+        # Сохраняем цену в специальную коллекцию settings
+        db.settings.update_one({"_id": "ice_price"}, {"$set": {"value": new_price}}, upsert=True)
+        bot.reply_to(m, f"✅ Курс обновлен: 1 ICE = {new_price} GOLD")
+    except:
+        bot.reply_to(m, "❌ Ошибка. Используйте: <code>/setprice 8000</code>", parse_mode="HTML")
+
+# Функция для получения текущей цены из базы
+def get_current_price():
+    price_doc = db.settings.find_one({"_id": "ice_price"})
+    return price_doc["value"] if price_doc else "не установлен"
+    
 
 # ---------- ERROR HANDLER ----------
 
