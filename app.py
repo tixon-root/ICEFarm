@@ -590,6 +590,7 @@ def admin_panel(m):
 <b>Команды:</b>
 /stats ID — Статистика игрока
 /broadcast ТЕКСТ — Рассылка всем
+/setprice ЦЕНА - изменения цен
 """
         bot.send_message(m.chat.id, txt, parse_mode="HTML")
     except Exception as e:
@@ -708,7 +709,7 @@ def admin_give(m):
 # Команда для установки курса (только для админа)
 @bot.message_handler(commands=["setprice"])
 def set_price(m):
-    if m.from_user.id != ADMIN_ID: return # Замени ADMIN_ID на свой ID
+    if m.from_user.id != 6395348885: return # Замени ADMIN_ID на свой ID
     
     try:
         # Пример: /setprice 8000
