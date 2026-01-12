@@ -167,6 +167,10 @@ def start(m):
             bot.send_message(m.chat.id, "❌ Ошибка получения данных")
             return
 
+        # ПОЛУЧАЕМ АКТУАЛЬНУЮ ЦЕНУ
+        price_doc = users.database.settings.find_one({"_id": "ice_price"})
+        current_price = price_doc["value"] if price_doc else "не установлен"
+
         txt = f"""
 ❄️ <b>ICECOIN - Криптовалютная игра</b>
 
@@ -175,6 +179,8 @@ def start(m):
 💰 Баланс: <b>{fmt(u['balance'])} ICE</b>
 ⛏ Уровень фарма: <b>{u['level']}</b>
 🏆 Побед в батлах: <b>{u['wins']}</b>
+
+📊 <b>Курс: 1 ICE = {current_price} GOLD</b>
 
 <i>Выберите действие из меню:</i>
 """
@@ -189,7 +195,6 @@ def start(m):
     except Exception as e:
         logger.error(f"Ошибка start: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка")
-        
 
 # ---------- PROFILE ----------
 
@@ -355,7 +360,7 @@ def send(m):
         
         # ПРОВЕРКА БАЛАНСА (с округлением)
         if round(u["balance"], 8) < round(amount, 8):
-            bot.reply_to(m, f"❌ Недостаточно средств!\nВаш баланс: <b>{fmt(u['balance'])} ICE</b>", parse_mode="HTML")
+            bot.reply_to(m, f"❌ Недостаточно средств!\n\n(⚠️ Переводы по ID работает только в личке боте)\nВаш баланс: <b>{fmt(u['balance'])} ICE</b>", parse_mode="HTML")
             return
 
         recipient = users.find_one({"_id": to_id})
