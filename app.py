@@ -738,23 +738,24 @@ def get_current_price():
 def withdraw(m):
     if not is_subscribed(m): return
 
-    # Получаем текущий курс из базы (чтобы пересчитать ICE в GOLD)
-    price_doc = users.database.settings.find_one({"_id": "ice_price"})
+    # 1. Получаем курс
+    price_doc = db.settings.find_one({"_id": "ice_price"})
     if not price_doc:
         bot.reply_to(m, "❌ Курс обмена еще не установлен админом.")
         return
     
-    # Извлекаем число из строки курса (например "8.000 GOLD" -> 8000)
     try:
-        rate = float(re.findall(r"(\d+\.?\d*)", price_doc["value"].replace('.', ''))[0])
+        # Извлекаем число из курса (удаляем пробелы и точки)
+        rate_str = "".join(re.findall(r"(\d+)", price_doc["value"]))
+        rate = float(rate_str)
     except:
-        rate = 8000.0 # Дефолтный курс если что-то пошло не так
+        rate = 8000.0
 
     parts = m.text.split()
     if len(parts) < 3:
         bot.reply_to(m, "💡 <b>Формат вывода:</b>\n\n"
-                        "1️⃣ <b>В золото (заявка):</b>\n<code>/withdraw gold [сумма]</code>\n"
-                        "2️⃣ <b>Прямо в Rucoy Bank:</b>\n<code>/withdraw bot [сумма]</code>", parse_mode="HTML")
+                        "1️⃣ <b>В золото, комиссия: 3 ❄️ (админу):</b>\n\n<code>/withdraw gold [сумма ICE]</code>\n"
+                        "2️⃣ <b>В Rucoy Bank комиссия: 3 ❄️ (авто):</b>\n\n<code>/withdraw bot [сумма ICE]</code>", parse_mode="HTML")
         return
 
     action = parts[1].lower()
@@ -770,64 +771,61 @@ def withdraw(m):
 
     u = get_user(m.from_user.id, m.from_user.username)
     if u["balance"] < amount:
-        bot.reply_to(m, f"❌ Недостаточно средств. Ваш баланс: {fmt(u['balance'])} ICE")
+        bot.reply_to(m, f"❌ Недостаточно средств. Ваш баланс: <b>{fmt(u['balance'])} ICE</b>", parse_mode="HTML")
         return
 
-    # --- СЦЕНАРИЙ 1: ВЫВОД В БОТА (ПРЯМОЙ) ---
+    # --- ВЫВОД В БОТА (АВТОМАТИЧЕСКИЙ) ---
     if action == "bot":
         fee = FEE_BOT_TRANSFER
         ice_to_send = amount - fee
         gold_to_receive = int(ice_to_send * rate)
 
-        # Списываем ICE в первом боте
+        # Списываем ICE
         users.update_one({"_id": m.from_user.id}, {"$inc": {"balance": -amount}})
 
-        # Начисляем GOLD во втором боте
         try:
-            # Ищем юзера во второй базе (используем m.from_user.id как uid)
-            res = rucoy_bank_coll.update_one(
+            # ЗАЧИСЛЯЕМ В ТАБЛИЦУ BANK (которую видит Yeti)
+            # Мы используем bank_db, которую определили в начале файла
+            bank_db.update_one(
                 {"uid": str(m.from_user.id)}, 
-                {"$inc": {"balance": gold_to_receive}}, 
+                {"$inc": {"balance": gold_to_receive}, "$set": {"name": m.from_user.first_name}}, 
                 upsert=True
             )
             
-            bot.reply_to(m, f"✅ <b>Успешный перевод в Rucoy Bank!</b>\n\n"
-                            f"💰 Списано: {amount} ICE\n"
-                            f"💳 Комиссия: {fee} ICE\n"
-                            f"🏦 Зачислено: <b>{gold_to_receive:,} GOLD</b>\n"
-                            f"📈 Курс: {rate}", parse_mode="HTML")
+            bot.reply_to(m, f"✅ <b>Успешный перевод!</b>\n\n"
+                            f"💰 Списано: <b>{amount} ICE</b>\n"
+                            f"💳 Комиссия: <b>{fee} ICE</b>\n"
+                            f"🏦 В Rucoy Bank: <b>{gold_to_receive:,} GOLD</b>", parse_mode="HTML")
             
-            # Уведомляем админа о транзакции
-            bot.send_message(ADMIN_ID, f"🔔 <b>Авто-вывод в бота</b>\nЮзер: @{u['username']} ({u['_id']})\nСумма: {amount} ICE -> {gold_to_receive} GOLD", parse_mode="HTML")
+            # Уведомление админу
+            bot.send_message(ADMIN_ID, f"🔔 <b>Авто-вывод</b>\nЮзер: @{u.get('username')} (<code>{u['_id']}</code>)\nСумма: {amount} ICE -> {gold_to_receive} GOLD", parse_mode="HTML")
             
         except Exception as e:
-            # Если база упала, возвращаем ICE игроку
+            # Если не вышло записать в базу
             users.update_one({"_id": m.from_user.id}, {"$inc": {"balance": amount}})
-            bot.reply_to(m, "❌ Ошибка связи с Rucoy Bank. ICE возвращены на баланс.")
-            logger.error(f"Transfer error: {e}")
+            logger.error(f"Ошибка БД при выводе: {e}")
+            bot.reply_to(m, "❌ Ошибка базы данных Rucoy Bank. Попробуйте позже.")
 
-    # --- СЦЕНАРИЙ 2: ВЫВОД GOLD (ЧЕРЕЗ АДМИНА) ---
+    # --- ВЫВОД GOLD (ЧЕРЕЗ АДМИНА) ---
     elif action == "gold":
         fee = FEE_GOLD
         ice_to_send = amount - fee
         gold_to_receive = int(ice_to_send * rate)
 
-        # Списываем баланс
         users.update_one({"_id": m.from_user.id}, {"$inc": {"balance": -amount}})
 
-        # Отправляем заявку админу
-        bot.send_message(6395348885, f"📤 <b>ЗАЯВКА НА ВЫВОД GOLD</b>\n\n"
-                                   f"👤 От: @{u['username']} (<code>{u['_id']}</code>)\n"
-                                   f"💰 Сумма ICE: {amount}\n"
-                                   f"💵 К выплате: <b>{gold_to_receive:,} GOLD</b>\n"
-                                   f"⚠️ Нужно выплатить вручную!", parse_mode="HTML")
+        bot.send_message(ADMIN_ID, f"📤 <b>ЗАЯВКА НА ВЫВОД</b>\n\n"
+                                   f"👤 От: @{u.get('username')} (<code>{u['_id']}</code>)\n"
+                                   f"💰 ICE: <b>{amount}</b>\n"
+                                   f"💵 GOLD: <b>{gold_to_receive:,}</b>\n"
+                                   f"⚠️ Выплатить вручную!", parse_mode="HTML")
 
-        bot.reply_to(m, f"✅ <b>Заявка принята!</b>\nСписано: {amount} ICE\nОжидайте выплату <b>{gold_to_receive:,} GOLD</b> от админа.")
-
+        bot.reply_to(m, f"✅ <b>Заявка принята!</b>\n\n"
+                        f"Списано: <b>{amount} ICE</b>\n"
+                        f"Ожидайте: <b>{gold_to_receive:,} GOLD</b>", parse_mode="HTML")
     else:
-        bot.reply_to(m, "❌ Используйте: gold или bot")
+        bot.reply_to(m, "❌ Используйте: <code>gold</code> или <code>bot</code>", parse_mode="HTML")
         
-
 # ---------- ERROR HANDLER ----------
 
 @bot.message_handler(func=lambda m: True)
