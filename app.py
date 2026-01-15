@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import random
 from flask import Flask, request, jsonify
@@ -23,6 +24,12 @@ TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK = os.getenv("WEBHOOK")
 ADMIN = os.getenv("ADMIN_USERNAME")
+
+# --- НАСТРОЙКИ ВЫВОДА ---
+MIN_WITHDRAW = 30.0      
+FEE_GOLD = 3.0           
+FEE_BOT_TRANSFER = 1.0   
+ADMIN_ID = 6395348885   
 
 # Валидация переменных окружения
 if not all([TOKEN, MONGO_URI, WEBHOOK, ADMIN]):
