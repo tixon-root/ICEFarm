@@ -24,6 +24,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK = os.getenv("WEBHOOK")
 ADMIN = os.getenv("ADMIN_USERNAME")
+client = MongoClient(MONGO_URI)
+db = client.get_database() 
 
 # --- НАСТРОЙКИ ВЫВОДА ---
 MIN_WITHDRAW = 30.0      
