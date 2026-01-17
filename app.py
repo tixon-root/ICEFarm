@@ -65,23 +65,35 @@ except Exception as e:
 # ---------- UTILS ----------
 
 def get_user(uid, username):
-    """Получить или создать пользователя"""
+    """Получить или создать пользователя без багов"""
     try:
-        username = username or f"user_{uid}"  # Защита от None
-        users.update_one(
-            {"_id": uid},
-            {"$setOnInsert": {
-                "username": username,
+        # Пытаемся найти игрока в базе
+        u = users.find_one({"_id": uid})
+        
+        # Защита от пустого никнейма
+        current_username = username if username else f"user_{uid}"
+
+        if not u:
+            # Если игрока нет, создаем его (регистрация)
+            u = {
+                "_id": uid,
+                "username": current_username,
                 "balance": 0.0,
                 "level": 1,
                 "farm": 0,
                 "wins": 0
-            }},
-            upsert=True
-        )
-        return users.find_one({"_id": uid})
+            }
+            users.insert_one(u)
+            logger.info(f"Зарегистрирован новый игрок: {current_username} ({uid})")
+        else:
+            # Если игрок есть, обновляем его никнейм (если он его сменил в ТГ)
+            if username and u.get("username") != username:
+                users.update_one({"_id": uid}, {"$set": {"username": username}})
+                u["username"] = username
+                
+        return u
     except Exception as e:
-        logger.error(f"Ошибка get_user: {e}")
+        logger.error(f"Критическая ошибка в get_user: {e}")
         return None
 
 def farm_amount(level):
@@ -93,39 +105,40 @@ def upgrade_price(level):
     return round(1 + level * 0.8, 2)
 
 def fmt(x):
-    """Форматирование числа"""
+    """Форматирование числа (2 знака после запятой)"""
     return round(float(x), 2)
 
 def check_sub(user_id):
     """Проверка подписки на канал"""
     try:
-        # Важно: Бот должен быть админом в канале!
+        # Бот должен быть админом в канале!
         status = bot.get_chat_member(CHANNEL_ID, user_id).status
         return status in ["member", "administrator", "creator"]
     except Exception as e:
-        logger.error(f"Ошибка проверки подписки: {e}")
-        return True # Если ошибка, пускаем пользователя, чтобы бот не «висел»
+        # Если канал не найден или бот не админ, не блокируем игроков
+        logger.warning(f"Ошибка проверки подписки (возможно бот не админ в канале): {e}")
+        return True 
 
 def is_subscribed(m):
-    """Вспомогательная функция с ответом в нужную тему"""
+    """Проверка подписки с ответом в нужную тему (для групп)"""
     if not check_sub(m.from_user.id):
         bot.send_message(
             m.chat.id, 
             f"❌ <b>Доступ ограничен!</b>\n\nЧтобы играть, подпишитесь на наш канал: {CHANNEL_ID}",
             parse_mode="HTML",
-            message_thread_id=m.message_thread_id  # Это заставит бота писать в текущую тему
+            message_thread_id=getattr(m, 'message_thread_id', None)
         )
         return False
     return True
 
 def create_main_keyboard():
-    """Создание главной клавиатуры"""
+    """Главное меню"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add("⛏ Фарм", "⏫ Улучшить")
     kb.add("🏆 Топ")
     kb.add("💸 Отправить", "👤 Профиль")
     return kb
-
+    
 # ---------- WEBHOOK ----------
 
 @app.route(f"/{TOKEN}", methods=["POST"])
