@@ -61,51 +61,73 @@ except Exception as e:
 def get_user(uid, username):
     """Получить юзера и убедиться, что все поля на месте"""
     try:
+        # 1. Ищем пользователя в базе
         u = users.find_one({"_id": uid})
         curr_name = username if username else f"user_{uid}"
         
-        
-        else:
-            # Проверка на наличие новых полей (защита от краша)
-            updates = {}
-            if "first_name" not in u: updates["first_name"] = curr_name
-            if "farm" not in u: updates["farm"] = 0
-            if "wins" not in u: updates["wins"] = 0
-            
-            if updates:
-                users.update_one({"_id": uid}, {"$set": updates})
-           if not u:
+        if not u:
+            # 2. Если пользователя нет — СОЗДАЕМ его
             u = {
                 "_id": uid,
-                "username": current_username,
-                "first_name": current_username, # Добавь эту строку
+                "username": curr_name,
+                "first_name": curr_name,
                 "balance": 0.0,
                 "level": 1,
                 "farm": 0,
                 "wins": 0
             }
             users.insert_one(u)
-             u.update(updates)
+            logger.info(f"Зарегистрирован новый игрок: {curr_name}")
+        else:
+            # 3. Если пользователь есть — ПРОВЕРЯЕМ наличие новых полей (защита от краша)
+            updates = {}
+            if "first_name" not in u: updates["first_name"] = curr_name
+            if "farm" not in u: updates["farm"] = 0
+            if "wins" not in u: updates["wins"] = 0
+            
+            # Обновляем ник, если игрок его сменил в Telegram
+            if username and u.get("username") != username:
+                updates["username"] = username
+
+            if updates:
+                users.update_one({"_id": uid}, {"$set": updates})
+                u.update(updates) # Обновляем данные в текущей переменной u
+                
         return u
     except Exception as e:
-        logger.error(f"Ошибка get_user: {e}")
+        logger.error(f"Ошибка в get_user: {e}")
         return None
 
-def farm_amount(level): return round(0.4 * level, 2)
-def upgrade_price(level): return round(1 + level * 0.8, 2)
-def fmt(x): return round(float(x), 2)
+def farm_amount(level): 
+    return round(0.4 * level, 2)
+
+def upgrade_price(level): 
+    return round(1 + level * 0.8, 2)
+
+def fmt(x): 
+    return round(float(x), 2)
 
 def is_subscribed(m):
+    """Проверка подписки на канал"""
     try:
         status = bot.get_chat_member(CHANNEL_ID, m.from_user.id).status
         if status in ["member", "administrator", "creator"]:
             return True
-    except:
-        return True # Если бот не админ, не блокируем
-    bot.send_message(m.chat.id, f"❌ Подпишитесь на {CHANNEL_ID}")
+    except Exception as e:
+        # Если бот не админ или канала нет — пускаем игрока, чтобы не ломать игру
+        logger.warning(f"Не удалось проверить подписку: {e}")
+        return True 
+        
+    bot.send_message(
+        m.chat.id, 
+        f"❌ <b>Доступ ограничен!</b>\n\nЧтобы играть, подпишитесь на наш канал: {CHANNEL_ID}",
+        parse_mode="HTML",
+        message_thread_id=getattr(m, "message_thread_id", None)
+    )
     return False
 
 def create_main_keyboard():
+    """Главное меню"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add("⛏ Фарм", "⏫ Улучшить")
     kb.add("🏆 Топ")
