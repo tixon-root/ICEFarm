@@ -44,24 +44,25 @@ app = Flask(__name__)
 # ---------- DB ----------
 try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    client.server_info()  # Проверка подключения
+    client.server_info()  
+    
+    # База данных САМОГО бота Ice Farm
     db = client["icecoin"]
     users = db.users
     battles = db.battles
     
-    # Создание индексов для оптимизации
+    # ПРАВКА: Подключаемся к базе бота YETI для вывода
+    # Мы используем тот же клиент, но ДРУГУЮ базу - "rucoy"
+    yeti_db = client["rucoy"]
+    bank_db = yeti_db["bank"] 
+    
     users.create_index("username")
     users.create_index([("balance", -1)])
     battles.create_index("status")
-    logger.info("База данных подключена успешно")
+    logger.info("База данных подключена успешно (включая Rucoy Bank)")
 except Exception as e:
     logger.error(f"Ошибка подключения к БД: {e}")
     raise
-
-FARM_CD = 10800  # 3 часа
-CHANNEL_ID = "@BANCUS_RUCOY" # Канал для подписки
-FEE = 0.1 # Комиссия за перевод
-
 
 # ---------- UTILS ----------
 
@@ -757,7 +758,7 @@ def withdraw(m):
     if len(parts) < 3:
         bot.reply_to(m, "💡 <b>Формат вывода:</b>\n\n"
                         "1️⃣ <b>В золото, комиссия: 3 ❄️ (админу):</b>\n\n<code>/withdraw gold [сумма ICE]</code>\n"
-                        "2️⃣ <b>В Rucoy Bank комиссия: 3 ❄️ (авто):</b>\n\n<code>/withdraw bot [сумма ICE]</code>", parse_mode="HTML")
+                        "2️⃣ <b>\nВ Rucoy Bank комиссия: 1 ❄️ (авто):</b>\n\n<code>/withdraw bot [сумма ICE]</code>", parse_mode="HTML")
         return
 
     action = parts[1].lower()
