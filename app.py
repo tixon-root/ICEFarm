@@ -64,17 +64,7 @@ def get_user(uid, username):
         u = users.find_one({"_id": uid})
         curr_name = username if username else f"user_{uid}"
         
-        if not u:
-            u = {
-                "_id": uid,
-                "username": curr_name,
-                "first_name": curr_name,
-                "balance": 0.0,
-                "level": 1,
-                "farm": 0,
-                "wins": 0
-            }
-            users.insert_one(u)
+        
         else:
             # Проверка на наличие новых полей (защита от краша)
             updates = {}
@@ -84,7 +74,18 @@ def get_user(uid, username):
             
             if updates:
                 users.update_one({"_id": uid}, {"$set": updates})
-                u.update(updates)
+           if not u:
+            u = {
+                "_id": uid,
+                "username": current_username,
+                "first_name": current_username, # Добавь эту строку
+                "balance": 0.0,
+                "level": 1,
+                "farm": 0,
+                "wins": 0
+            }
+            users.insert_one(u)
+             u.update(updates)
         return u
     except Exception as e:
         logger.error(f"Ошибка get_user: {e}")
