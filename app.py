@@ -17,30 +17,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------- НАСТРОЙКИ (FIXED) ----------
+# ---------- LOAD ENV ----------
+load_dotenv()
+
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK = os.getenv("WEBHOOK")
 ADMIN = os.getenv("ADMIN_USERNAME")
 
-# Константы, которых не хватало:
-FARM_CD = 10800          # 3 часа в секундах
-CHANNEL_ID = "@BANCUS_RUCOY" # Твой канал
-FEE = 1.0                # Комиссия за перевод (ICE)
-MIN_WITHDRAW = 30.0      # Минимум для вывода
-FEE_GOLD = 3.0           # Комиссия за вывод голд
-FEE_BOT_TRANSFER = 1.0   # Комиссия за вывод в банк
-ADMIN_ID = 6395348885    # Твой ID
-
-# --- НАСТРОЙКИ ВЫВОДА ---
+# ---------- CONSTANTS (ВАЖНО!) ----------
+FARM_CD = 10800          # 3 часа
+CHANNEL_ID = "@BANCUS_RUCOY" 
+FEE = 1.0                # Комиссия для /send
 MIN_WITHDRAW = 30.0      
 FEE_GOLD = 3.0           
 FEE_BOT_TRANSFER = 1.0   
 ADMIN_ID = 6395348885   
-
-# Валидация переменных окружения
-if not all([TOKEN, MONGO_URI, WEBHOOK, ADMIN]):
-    raise ValueError("Не все переменные окружения установлены!")
 
 # ---------- INIT ----------
 bot = telebot.TeleBot(TOKEN, threaded=False)
@@ -50,94 +42,69 @@ app = Flask(__name__)
 try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     client.server_info()  
-    
-    # Основная база Ice Farm
     db = client["icecoin"]
     users = db["users"]
     battles = db["battles"]
-    settings = db["settings"] # Добавили эту переменную
+    settings = db["settings"]
     
-    # База Yeti для вывода
     yeti_db = client["rucoy"]
     bank_db = yeti_db["bank"] 
     
     users.create_index("username")
-    logger.info("База данных подключена успешно")
+    logger.info("База данных подключена")
 except Exception as e:
-    logger.error(f"Ошибка подключения к БД: {e}")
+    logger.error(f"Ошибка БД: {e}")
     raise
 
 # ---------- UTILS ----------
 
 def get_user(uid, username):
-    """Получить или создать пользователя без багов"""
+    """Получить юзера и убедиться, что все поля на месте"""
     try:
-        # Пытаемся найти игрока в базе
         u = users.find_one({"_id": uid})
+        curr_name = username if username else f"user_{uid}"
         
-        # Защита от пустого никнейма
-        current_username = username if username else f"user_{uid}"
-
         if not u:
-            # Если игрока нет, создаем его (регистрация)
             u = {
                 "_id": uid,
-                "username": current_username,
+                "username": curr_name,
+                "first_name": curr_name,
                 "balance": 0.0,
                 "level": 1,
                 "farm": 0,
                 "wins": 0
             }
             users.insert_one(u)
-            logger.info(f"Зарегистрирован новый игрок: {current_username} ({uid})")
         else:
-            # Если игрок есть, обновляем его никнейм (если он его сменил в ТГ)
-            if username and u.get("username") != username:
-                users.update_one({"_id": uid}, {"$set": {"username": username}})
-                u["username"] = username
-                
+            # Проверка на наличие новых полей (защита от краша)
+            updates = {}
+            if "first_name" not in u: updates["first_name"] = curr_name
+            if "farm" not in u: updates["farm"] = 0
+            if "wins" not in u: updates["wins"] = 0
+            
+            if updates:
+                users.update_one({"_id": uid}, {"$set": updates})
+                u.update(updates)
         return u
     except Exception as e:
-        logger.error(f"Критическая ошибка в get_user: {e}")
+        logger.error(f"Ошибка get_user: {e}")
         return None
 
-def farm_amount(level):
-    """Расчет награды за фарм"""
-    return round(0.4 * level, 2)
-
-def upgrade_price(level):
-    """Расчет цены улучшения"""
-    return round(1 + level * 0.8, 2)
-
-def fmt(x):
-    """Форматирование числа (2 знака после запятой)"""
-    return round(float(x), 2)
-
-def check_sub(user_id):
-    """Проверка подписки на канал"""
-    try:
-        # Бот должен быть админом в канале!
-        status = bot.get_chat_member(CHANNEL_ID, user_id).status
-        return status in ["member", "administrator", "creator"]
-    except Exception as e:
-        # Если канал не найден или бот не админ, не блокируем игроков
-        logger.warning(f"Ошибка проверки подписки (возможно бот не админ в канале): {e}")
-        return True 
+def farm_amount(level): return round(0.4 * level, 2)
+def upgrade_price(level): return round(1 + level * 0.8, 2)
+def fmt(x): return round(float(x), 2)
 
 def is_subscribed(m):
-    """Проверка подписки с ответом в нужную тему (для групп)"""
-    if not check_sub(m.from_user.id):
-        bot.send_message(
-            m.chat.id, 
-            f"❌ <b>Доступ ограничен!</b>\n\nЧтобы играть, подпишитесь на наш канал: {CHANNEL_ID}",
-            parse_mode="HTML",
-            message_thread_id=getattr(m, 'message_thread_id', None)
-        )
-        return False
-    return True
+    try:
+        status = bot.get_chat_member(CHANNEL_ID, m.from_user.id).status
+        if status in ["member", "administrator", "creator"]:
+            return True
+    except:
+        return True # Если бот не админ, не блокируем
+    bot.send_message(m.chat.id, f"❌ Подпишитесь на {CHANNEL_ID}")
+    return False
 
 def create_main_keyboard():
-    """Главное меню"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add("⛏ Фарм", "⏫ Улучшить")
     kb.add("🏆 Топ")
