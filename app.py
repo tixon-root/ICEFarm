@@ -17,15 +17,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------- LOAD ENV ----------
-load_dotenv()
-
+# ---------- НАСТРОЙКИ (FIXED) ----------
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK = os.getenv("WEBHOOK")
 ADMIN = os.getenv("ADMIN_USERNAME")
-client = MongoClient(MONGO_URI)
-db = client.get_database() 
+
+# Константы, которых не хватало:
+FARM_CD = 10800          # 3 часа в секундах
+CHANNEL_ID = "@BANCUS_RUCOY" # Твой канал
+FEE = 1.0                # Комиссия за перевод (ICE)
+MIN_WITHDRAW = 30.0      # Минимум для вывода
+FEE_GOLD = 3.0           # Комиссия за вывод голд
+FEE_BOT_TRANSFER = 1.0   # Комиссия за вывод в банк
+ADMIN_ID = 6395348885    # Твой ID
 
 # --- НАСТРОЙКИ ВЫВОДА ---
 MIN_WITHDRAW = 30.0      
