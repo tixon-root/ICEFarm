@@ -46,20 +46,18 @@ try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     client.server_info()  
     
-    # База данных САМОГО бота Ice Farm
+    # Основная база Ice Farm
     db = client["icecoin"]
-    users = db.users
-    battles = db.battles
+    users = db["users"]
+    battles = db["battles"]
+    settings = db["settings"] # Добавили эту переменную
     
-    # ПРАВКА: Подключаемся к базе бота YETI для вывода
-    # Мы используем тот же клиент, но ДРУГУЮ базу - "rucoy"
+    # База Yeti для вывода
     yeti_db = client["rucoy"]
     bank_db = yeti_db["bank"] 
     
     users.create_index("username")
-    users.create_index([("balance", -1)])
-    battles.create_index("status")
-    logger.info("База данных подключена успешно (включая Rucoy Bank)")
+    logger.info("База данных подключена успешно")
 except Exception as e:
     logger.error(f"Ошибка подключения к БД: {e}")
     raise
