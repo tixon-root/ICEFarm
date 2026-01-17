@@ -756,7 +756,7 @@ def withdraw(m):
     if len(parts) < 3:
         bot.reply_to(m, "💡 <b>Формат вывода:</b>\n\n"
                         "1️⃣ <b>В золото, комиссия: 3 ❄️ (админу):</b>\n\n<code>/withdraw gold [сумма ICE]</code>\n"
-                        "2️⃣ <b>\nВ Rucoy Bank комиссия: 1 ❄️ (авто):</b>\n\n<code>/withdraw bot [сумма ICE]</code>", parse_mode="HTML")
+                        "\n2️⃣ <b>В Rucoy Bank комиссия: 1 ❄️ (авто):</b>\n\n<code>/withdraw bot [сумма ICE]</code>", parse_mode="HTML")
         return
 
     action = parts[1].lower()
