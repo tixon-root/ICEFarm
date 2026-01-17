@@ -740,7 +740,7 @@ def withdraw(m):
     if not is_subscribed(m): return
 
     # 1. Получаем курс
-    price_doc = db.settings.find_one({"_id": "ice_price"})
+    price_doc = settings.find_one({"_id": "ice_price"})
     if not price_doc:
         bot.reply_to(m, "❌ Курс обмена еще не установлен админом.")
         return
