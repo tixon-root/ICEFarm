@@ -176,7 +176,7 @@ def start(m):
             return
 
         # ПОЛУЧАЕМ АКТУАЛЬНУЮ ЦЕНУ
-        price_doc = users.database.settings.find_one({"_id": "ice_price"})
+        price_doc = settings.find_one({"_id": "ice_price"})
         current_price = price_doc["value"] if price_doc else "не установлен"
 
         txt = f"""
