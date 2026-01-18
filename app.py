@@ -98,11 +98,18 @@ def get_user(uid, username):
         logger.error(f"Ошибка в get_user: {e}")
         return None
 
-def farm_amount(level): 
-    return round(0.4 * level, 2)
+def farm_amount(level):
+    """Сбалансированный расчет награды"""
+    if level <= 20:
+        return round(0.4 * level, 2)
+    else:
+        # После 20 уровня рост замедляется, чтобы не было гиперинфляции
+        return round(8.0 + (level - 20) * 0.2, 2)
 
-def upgrade_price(level): 
-    return round(1 + level * 0.8, 2)
+def upgrade_price(level):
+    """Прогрессивная цена: чем выше уровень, тем сложнее апать"""
+    # Формула делает апгрейд на высоких уровнях очень дорогим
+    return round(5 + (level ** 1.9), 2)
 
 def fmt(x): 
     return round(float(x), 2)
@@ -214,42 +221,49 @@ def start(m):
 
 # ---------- PROFILE ----------
 
-@bot.message_handler(func=lambda m: m.text == "👤 Профиль" or m.text == "/profile")
+@bot.message_handler(func=lambda m: m.text in ["👤 Профиль", "/profile"])
 def profile(m):
     """Показать профиль"""
     try:
         u = get_user(m.from_user.id, m.from_user.username)
         if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
+            # Безопасная отправка сообщения (проверка на наличие темы)
+            t_id = getattr(m, 'message_thread_id', None)
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=t_id)
             return
 
         now = int(time.time())
-        next_farm = u["farm"] + FARM_CD - now
-        farm_status = f"✅ Доступно!" if next_farm <= 0 else f"⏳ Через {next_farm // 60} мин"
+        # БЕЗОПАСНО: используем .get("farm", 0) вместо ["farm"]
+        last_farm = u.get("farm", 0)
+        next_farm = last_farm + FARM_CD - now
         
-        txt = f"""
-👤 <b>Профиль @{u['username']}</b>
-
-💰 Баланс: <b>{fmt(u['balance'])} ICE</b>
-⛏ Уровень фарма: <b>{u['level']}</b>
-📈 Добыча за фарм: <b>{farm_amount(u['level'])} ICE</b>
-⏫ Цена улучшения: <b>{upgrade_price(u['level'])} ICE</b>
-🏆 Побед в батлах: <b>{u['wins']}</b>
-
-⛏ Статус фарма: {farm_status}
-"""
-        # ТУТ ТОЖЕ БЫЛА ОШИБКА: Выровняй отступ
+        if next_farm <= 0:
+            farm_status = "✅ Доступно!"
+        else:
+            # Считаем часы и минуты для красоты
+            mins = next_farm // 60
+            farm_status = f"⏳ Через {mins} мин"
+        
+        txt = (f"👤 <b>Профиль @{u['username']}</b>\n\n"
+               f"💰 Баланс: <b>{fmt(u['balance'])} ICE</b>\n"
+               f"⛏ Уровень: <b>{u['level']}</b>\n"
+               f"📈 Доход: <b>{farm_amount(u['level'])} ICE</b>\n"
+               f"⏫ Цена апа: <b>{upgrade_price(u['level'])} ICE</b>\n"
+               f"🏆 Побед: <b>{u.get('wins', 0)}</b>\n\n"
+               f"⛏ Статус: {farm_status}")
+        
         bot.send_message(
             m.chat.id, 
             txt, 
             parse_mode="HTML",
-            message_thread_id=m.message_thread_id
+            message_thread_id=getattr(m, 'message_thread_id', None)
         )
 
     except Exception as e:
         logger.error(f"Ошибка profile: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
-        
+        # Если ошибка всё же случилась, бот не просто молчит, а пишет лог
+        bot.send_message(m.chat.id, "❌ Произошла ошибка в профиле", 
+                         message_thread_id=getattr(m, 'message_thread_id', None))
 
 # ---------- FARM ----------
 
