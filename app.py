@@ -420,14 +420,18 @@ def send(m):
 
 @bot.message_handler(func=lambda m: m.text in ["🏆 Топ", "/top"])
 def top_menu(m):
-    """Меню выбора типа топа"""
+    """Меню выбора типа топа с кнопками в ряд и одной снизу"""
     if not is_subscribed(m): return
     
-    kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton("💰 По балансу", callback_data="top_balance"),
-        types.InlineKeyboardButton("🎖 По уровню", callback_data="top_level")
-    )
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    # Кнопки в ряд
+    b1 = types.InlineKeyboardButton("💰 По балансу", callback_data="top_balance")
+    b2 = types.InlineKeyboardButton("🎖 По уровню", callback_data="top_level")
+    # Кнопка на отдельной строке снизу
+    b3 = types.InlineKeyboardButton("⚔️ По победам", callback_data="top_wins")
+    
+    kb.add(b1, b2) # Первый ряд
+    kb.add(b3)     # Второй ряд
     
     bot.send_message(
         m.chat.id, 
@@ -439,35 +443,43 @@ def top_menu(m):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("top_"))
 def top_callback(c):
-    """Обработка выбора топа"""
+    """Обработка выбора топа с отображением Имени"""
     try:
-        if c.data == "top_balance":
-            # Топ по деньгам
+        data = c.data
+        if data == "top_balance":
             sort_field = "balance"
             title = "🏆 <b>ТОП-10 БОГАТЕЕВ (ICE)</b>"
             unit = "ICE"
-        else:
-            # Топ по уровням
+        elif data == "top_level":
             sort_field = "level"
             title = "🎖 <b>ТОП-10 МАСТЕРОВ ФАРМА</b>"
             unit = "LVL"
+        else:
+            sort_field = "wins"
+            title = "⚔️ <b>ТОП-10 ГЛАДИАТОРОВ</b>"
+            unit = "побед"
 
+        # Достаем лучших из базы
         top_users = users.find().sort(sort_field, -1).limit(10)
         
         text = f"{title}\n\n"
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         
         for i, user in enumerate(top_users, 1):
-            # Используем first_name для ника
+            # ТУТ ИСПРАВЛЕНИЕ: сначала ищем ИМЯ (first_name), если нет - юзернейм
             name = user.get("first_name") or user.get("username") or f"Игрок {user['_id']}"
-            name = name.replace("@", "") # Защита от тегов
+            
+            # Очистка имени от лишних символов, чтобы не ломать HTML
+            name = name.replace("<", "").replace(">", "").replace("@", "")
             
             val = user.get(sort_field, 0)
             prefix = medals.get(i, f"{i}.")
             
-            text += f"{prefix} {name} — <b>{fmt(val)} {unit}</b>\n"
+            # Форматируем значение (для баланса - дробное, для лвла и побед - целое)
+            val_fmt = fmt(val) if sort_field == "balance" else int(val)
+            
+            text += f"{prefix} <b>{name}</b> — {val_fmt} {unit}\n"
         
-        # Обновляем старое сообщение текстом топа
         bot.edit_message_text(
             text, 
             c.message.chat.id, 
