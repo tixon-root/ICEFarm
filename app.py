@@ -58,44 +58,32 @@ except Exception as e:
 
 # ---------- UTILS ----------
 
-def get_user(uid, username):
-    """Получить юзера и убедиться, что все поля на месте"""
+def get_user(uid, username, first_name=None):
+    """Получить юзера с сохранением имени для Топа"""
     try:
-        # 1. Ищем пользователя в базе
         u = users.find_one({"_id": uid})
-        curr_name = username if username else f"user_{uid}"
-        
+        # Приоритет имени: то что пришло из ТГ -> то что в базе -> дефолт
+        name_to_save = first_name or username or f"User_{uid}"
+
         if not u:
-            # 2. Если пользователя нет — СОЗДАЕМ его
             u = {
                 "_id": uid,
-                "username": curr_name,
-                "first_name": curr_name,
+                "username": username or f"user_{uid}",
+                "first_name": name_to_save,
                 "balance": 0.0,
                 "level": 1,
                 "farm": 0,
                 "wins": 0
             }
             users.insert_one(u)
-            logger.info(f"Зарегистрирован новый игрок: {curr_name}")
         else:
-            # 3. Если пользователь есть — ПРОВЕРЯЕМ наличие новых полей (защита от краша)
-            updates = {}
-            if "first_name" not in u: updates["first_name"] = curr_name
-            if "farm" not in u: updates["farm"] = 0
-            if "wins" not in u: updates["wins"] = 0
-            
-            # Обновляем ник, если игрок его сменил в Telegram
-            if username and u.get("username") != username:
-                updates["username"] = username
-
-            if updates:
-                users.update_one({"_id": uid}, {"$set": updates})
-                u.update(updates) # Обновляем данные в текущей переменной u
-                
+            # Если имя в ТГ изменилось, обновляем в базе для Топа
+            if first_name and u.get("first_name") != first_name:
+                users.update_one({"_id": uid}, {"$set": {"first_name": first_name}})
+                u["first_name"] = first_name
         return u
     except Exception as e:
-        logger.error(f"Ошибка в get_user: {e}")
+        logger.error(f"Ошибка get_user: {e}")
         return None
 
 def farm_amount(level):
@@ -430,43 +418,67 @@ def send(m):
         
 # ---------- TOP ----------
 
-@bot.message_handler(func=lambda m: m.text == "🏆 Топ" or m.text == "/top")
-def top(m):
-    # Проверка подписки
+@bot.message_handler(func=lambda m: m.text in ["🏆 Топ", "/top"])
+def top_menu(m):
+    """Меню выбора типа топа"""
     if not is_subscribed(m): return
     
+    kb = types.InlineKeyboardMarkup()
+    kb.add(
+        types.InlineKeyboardButton("💰 По балансу", callback_data="top_balance"),
+        types.InlineKeyboardButton("🎖 По уровню", callback_data="top_level")
+    )
+    
+    bot.send_message(
+        m.chat.id, 
+        "<b>Выберите таблицу лидеров:</b>", 
+        parse_mode="HTML", 
+        reply_markup=kb,
+        message_thread_id=getattr(m, 'message_thread_id', None)
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("top_"))
+def top_callback(c):
+    """Обработка выбора топа"""
     try:
-        # Получаем 10 самых богатых
-        top_users = users.find().sort("balance", -1).limit(10)
+        if c.data == "top_balance":
+            # Топ по деньгам
+            sort_field = "balance"
+            title = "🏆 <b>ТОП-10 БОГАТЕЕВ (ICE)</b>"
+            unit = "ICE"
+        else:
+            # Топ по уровням
+            sort_field = "level"
+            title = "🎖 <b>ТОП-10 МАСТЕРОВ ФАРМА</b>"
+            unit = "LVL"
+
+        top_users = users.find().sort(sort_field, -1).limit(10)
         
-        text = "🏆 <b>ТОП-10 ИГРОКОВ</b>\n\n"
-        
-        # Медали для красоты, как в старой версии
+        text = f"{title}\n\n"
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         
         for i, user in enumerate(top_users, 1):
-            # Используем имя (first_name). Это просто текст, он НЕ ТЕГАЕТ.
-            # Если имени нет, используем username, но без символа @
-            name = user.get("first_name") or user.get("username") or "Игрок"
+            # Используем first_name для ника
+            name = user.get("first_name") or user.get("username") or f"Игрок {user['_id']}"
+            name = name.replace("@", "") # Защита от тегов
             
-            # Убираем символ @, если он случайно остался в имени, чтобы точно не было тега
-            name = name.replace("@", "") 
-            
+            val = user.get(sort_field, 0)
             prefix = medals.get(i, f"{i}.")
             
-            # Стиль: Медаль/Цифра Имя — Баланс ICE
-            text += f"{prefix} {name} — {fmt(user['balance'])} ICE\n"
+            text += f"{prefix} {name} — <b>{fmt(val)} {unit}</b>\n"
         
-        bot.send_message(
-            m.chat.id, 
+        # Обновляем старое сообщение текстом топа
+        bot.edit_message_text(
             text, 
-            parse_mode="HTML", 
-            message_thread_id=m.message_thread_id
+            c.message.chat.id, 
+            c.message.message_id, 
+            parse_mode="HTML"
         )
+        bot.answer_callback_query(c.id)
         
     except Exception as e:
-        logger.error(f"Ошибка в ТОП: {e}")
-        bot.reply_to(m, "❌ Ошибка загрузки топа.")
+        logger.error(f"Ошибка топа: {e}")
+        bot.answer_callback_query(c.id, "❌ Ошибка загрузки данных")
 
 # ---------- BATTLE ----------
 
