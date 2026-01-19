@@ -624,107 +624,129 @@ def run_battle(battle, bet):
     
     battles.delete_one({"_id": battle["_id"]})
 
-# ---------- ADMIN ----------
+# ---------- ОБЪЕДИНЕННАЯ АДМИН-СИСТЕМА ----------
 
 @bot.message_handler(commands=["admin"])
 def admin_panel(m):
-    """Админ-панель"""
-    if m.from_user.username != ADMIN:
-        return
-    
+    """Общая статистика (твоя прошлая функция)"""
+    if m.from_user.id != ADMIN_ID: return
     try:
         total_users = users.count_documents({})
-        # Агрегация для подсчета общей суммы монет
         pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance"}}}]
         result = list(users.aggregate(pipeline))
         total_sum = result[0]['total'] if result else 0
         
-        txt = f"""
-👑 <b>АДМИН-ПАНЕЛЬ</b>
-
-👥 Всего пользователей: <b>{total_users}</b>
-💰 Всего монет в обороте: <b>{fmt(total_sum)} ICE</b>
-
-<b>Команды:</b>
-/stats ID — Статистика игрока
-/broadcast ТЕКСТ — Рассылка всем
-/setprice ЦЕНА - изменения цен
-"""
+        txt = (f"👑 <b>АДМИН-ПАНЕЛЬ</b>\n\n"
+               f"👥 Всего пользователей: <b>{total_users}</b>\n"
+               f"💰 Всего в обороте: <b>{fmt(total_sum)} ICE</b>\n\n"
+               f"<b>Команды:</b>\n"
+               f"/stats ID — Управление игроком\n"
+               f"/broadcast — Сделать рассылку\n"
+               f"/setprice ЦЕНА — Изменение курса")
         bot.send_message(m.chat.id, txt, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Ошибка в админ-панели: {e}")
 
 @bot.message_handler(commands=["stats"])
-def stats(m):
-    """Статистика конкретного пользователя (только для админа)"""
-    if m.from_user.username != ADMIN:
-        return
+def admin_manage_user(m):
+    """ТВОЙ БЛОК: Вызов карточки управления игроком через /stats ID"""
+    if m.from_user.id != ADMIN_ID: return
     try:
         parts = m.text.split()
         if len(parts) < 2:
-            bot.send_message(m.chat.id, "Использование: /stats ID")
+            bot.reply_to(m, "💡 Формат: <code>/stats ID</code>", parse_mode="HTML")
             return
         
         target_id = int(parts[1])
-        user = users.find_one({"_id": target_id})
+        u = users.find_one({"_id": target_id})
         
-        if not user:
-            bot.send_message(m.chat.id, "❌ Пользователь не найден")
+        if not u:
+            bot.reply_to(m, "❌ Пользователь не найден в базе.")
             return
-            
-        txt = f"""
-📊 <b>Статистика @{user.get('username', 'N/A')}</b>
-🆔 ID: <code>{user['_id']}</code>
-💰 Баланс: {fmt(user['balance'])} ICE
-⛏ Уровень: {user['level']}
-🏆 Побед: {user.get('wins', 0)}
-"""
-        bot.send_message(m.chat.id, txt, parse_mode="HTML")
+
+        # ТВОИ КНОПКИ
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            types.InlineKeyboardButton("💰 Баланс", callback_data=f"adm_edit_bal_{target_id}"),
+            types.InlineKeyboardButton("📈 Уровень", callback_data=f"adm_edit_lvl_{target_id}"),
+            types.InlineKeyboardButton("❌ Закрыть", callback_data="adm_close")
+        )
+        
+        txt = (f"🎛 <b>Панель управления игроком</b>\n\n"
+               f"👤 Ник: <b>{u.get('first_name', 'Не указан')}</b>\n"
+               f"🆔 ID: <code>{u['_id']}</code>\n\n"
+               f"💰 Баланс: <code>{fmt(u['balance'])}</code> ICE\n"
+               f"⛏ Уровень: <code>{u['level']}</code> LVL\n"
+               f"🏆 Побед: {u.get('wins', 0)}")
+        
+        bot.send_message(m.chat.id, txt, parse_mode="HTML", reply_markup=kb)
     except Exception as e:
-        bot.send_message(m.chat.id, f"❌ Ошибка: {e}")
+        bot.reply_to(m, f"❌ Ошибка: {e}")
+
+# ---------- ЛОГИКА КНОПОК И ВВОДА ДАННЫХ ----------
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("adm_"))
+def admin_callback(c):
+    if c.from_user.id != ADMIN_ID: return
+    if c.data == "adm_close":
+        bot.delete_message(c.message.chat.id, c.message.message_id)
+        return
+
+    data = c.data.split("_")
+    action = data[2] 
+    target_id = int(data[3])
+    
+    label = "баланс" if action == "bal" else "уровень"
+    msg = bot.send_message(c.message.chat.id, f"⌨️ Введите новый <b>{label}</b> для <code>{target_id}</code>:", parse_mode="HTML")
+    
+    if action == "bal":
+        bot.register_next_step_handler(msg, save_admin_balance, target_id)
+    else:
+        bot.register_next_step_handler(msg, save_admin_level, target_id)
+    bot.answer_callback_query(c.id)
+
+def save_admin_balance(m, target_id):
+    try:
+        new_val = float(m.text.replace(',', '.'))
+        users.update_one({"_id": target_id}, {"$set": {"balance": round(new_val, 2)}})
+        bot.send_message(m.chat.id, f"✅ Баланс игрока <code>{target_id}</code> изменен на <b>{new_val} ICE</b>", parse_mode="HTML")
+    except:
+        bot.send_message(m.chat.id, "❌ Ошибка! Введите число.")
+
+def save_admin_level(m, target_id):
+    try:
+        new_val = int(m.text)
+        users.update_one({"_id": target_id}, {"$set": {"level": new_val}})
+        bot.send_message(m.chat.id, f"✅ Уровень игрока <code>{target_id}</code> изменен на <b>{new_val} LVL</b>", parse_mode="HTML")
+    except:
+        bot.send_message(m.chat.id, "❌ Ошибка! Введите целое число.")
+
+# ---------- РАССЫЛКА ----------
 
 @bot.message_handler(commands=["broadcast"])
 def broadcast(m):
-    # Проверка, что пишет админ (замени 12345678 на свой ID)
-    if m.from_user.id != 6395348885:
-        return
-
-    # Просим админа прислать пост
-    msg = bot.reply_to(m, "Введите текст объявления или пришлите фото с описанием. Для отмены напишите /cancel")
+    if m.from_user.id != ADMIN_ID: return
+    msg = bot.reply_to(m, "Введите текст или пришлите фото. /cancel для отмены")
     bot.register_next_step_handler(msg, start_broadcast)
 
 def start_broadcast(m):
     if m.text == "/cancel":
-        bot.send_message(m.chat.id, "Рассылка отменена.")
+        bot.send_message(m.chat.id, "Отменено.")
         return
-
-    all_users = users.find()
+    all_u = users.find()
     count = 0
-    
-    for user in all_users:
+    for u in all_u:
         try:
-            # Если админ прислал ФОТО
             if m.content_type == 'photo':
-                bot.send_photo(
-                    user["_id"], 
-                    m.photo[-1].file_id, 
-                    caption=m.caption, 
-                    parse_mode="HTML"
-                )
-            # Если админ прислал только ТЕКСТ
-            elif m.content_type == 'text':
-                bot.send_message(
-                    user["_id"], 
-                    m.text, 
-                    parse_mode="HTML", 
-                    disable_web_page_preview=False
-                )
+                bot.send_photo(u["_id"], m.photo[-1].file_id, caption=m.caption, parse_mode="HTML")
+            else:
+                bot.send_message(u["_id"], m.text, parse_mode="HTML")
             count += 1
-        except Exception:
-            continue # Пропускаем, если бот заблокирован пользователем
-
-    bot.send_message(m.chat.id, f"✅ Рассылка завершена! Получили: {count} чел.")
+            time.sleep(0.05)
+        except: continue
+    bot.send_message(m.chat.id, f"✅ Рассылка завершена: {count} чел.")
     
+
 # ---------- ADMIN COMMANDS ----------
 
 @bot.message_handler(commands=["give"])
