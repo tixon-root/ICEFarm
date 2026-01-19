@@ -87,12 +87,16 @@ def get_user(uid, username, first_name=None):
         return None
 
 def farm_amount(level):
-    """Сбалансированный расчет награды"""
+    """Доход: до 20 лвла по +0.4, после 20 лвла по +0.1"""
     if level <= 20:
         return round(0.4 * level, 2)
     else:
-        # После 20 уровня рост замедляется, чтобы не было гиперинфляции
-        return round(8.0 + (level - 20) * 0.2, 2)
+        # База за 20 лвл (8.0) + по 0.1 за каждый уровень выше
+        return round(8.0 + (level - 20) * 0.1, 2)
+
+def upgrade_price(level):
+    """Возвращаем старую доступную формулу цены"""
+    return round(1 + level * 0.8, 2)
 
 def upgrade_price(level):
     """Прогрессивная цена: чем выше уровень, тем сложнее апать"""
