@@ -87,12 +87,16 @@ def get_user(uid, username, first_name=None):
         return None
 
 def farm_amount(level):
-    """Доход: до 20 лвла по +0.4, после 20 лвла по +0.1"""
-    if level <= 20:
+    """Доход: до 15 лвла +0.4, после 15 лвла +0.1"""
+    if level <= 15:
         return round(0.4 * level, 2)
     else:
-        # База за 20 лвл (8.0) + по 0.1 за каждый уровень выше
-        return round(8.0 + (level - 20) * 0.1, 2)
+        # База за 15 лвл (6.0) + по 0.1 за каждый уровень выше
+        return round(6.0 + (level - 15) * 0.1, 2)
+
+def upgrade_price(level):
+    """Старая дешевая цена: базовая 1 + 0.8 за каждый уровень"""
+    return round(1 + level * 0.8, 2)
 
 def upgrade_price(level):
     """Возвращаем старую доступную формулу цены"""
