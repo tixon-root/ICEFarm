@@ -119,10 +119,18 @@ def is_subscribed(m):
 
 def create_main_keyboard():
     """Главное меню"""
+    # Используем переменную kb везде
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    
+    # Первый ряд: основные действия
     kb.add("⛏ Фарм", "⏫ Улучшить")
-    kb.add("🏆 Топ", "🎒 Инвентарь")
-    kb.add("💸 Отправить", "👤 Профиль")
+    
+    # Второй ряд: социалка
+    kb.add("🏆 Топ", "💸 Отправить")
+    
+    # Третий ряд: личное
+    kb.add("👤 Профиль", "🎒 Инвентарь")
+    
     return kb
     
 # ---------- WEBHOOK ----------
