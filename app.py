@@ -59,20 +59,17 @@ except Exception as e:
 # ---------- UTILS ----------
 
 def get_user(uid, username, first_name=None):
-    """Получить юзера с сохранением имени для Топа"""
     try:
         u = users.find_one({"_id": uid})
-        # Приоритет имени: то что пришло из ТГ -> то что в базе -> дефолт
-        name_to_save = first_name or username or f"User_{uid}"
-
+        display_name = first_name or username or f"User_{uid}"
         if not u:
             u = {
                 "_id": uid,
                 "username": username or f"user_{uid}",
-                "first_name": name_to_save,
+                "first_name": display_name,
                 "balance": 0.0,
                 "level": 1,
-                "farm": 0,
+                "inventory": [], # ТВОЙ СКЛАД/МЕШОК ДЛЯ NFT
                 "wins": 0
             }
             users.insert_one(u)
