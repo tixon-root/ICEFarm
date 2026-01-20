@@ -240,13 +240,15 @@ def profile(m):
             mins = next_farm // 60
             farm_status = f"⏳ Через {mins} мин"
         
+                # Внутри profile(m)
         txt = (f"👤 <b>Профиль @{u['username']}</b>\n\n"
                f"💰 Баланс: <b>{fmt(u['balance'])} ICE</b>\n"
                f"⛏ Уровень: <b>{u['level']}</b>\n"
-               f"📈 Доход: <b>{farm_amount(u['level'])} ICE</b>\n"
-               f"⏫ Цена апа: <b>{upgrade_price(u['level'])} ICE</b>\n"
-               f"🏆 Побед: <b>{u.get('wins', 0)}</b>\n\n"
+               f"📈 Доход: <b>{farm_amount(u['level'])} ICE</b>\n" # Берет новую формулу
+               f"⏫ Цена апа: <b>{upgrade_price(u['level'])} ICE</b>\n" # Берет дешевую формулу
+               f"🏆 Побед: {u.get('wins', 0)}\n\n"
                f"⛏ Статус: {farm_status}")
+
         
         bot.send_message(
             m.chat.id, 
