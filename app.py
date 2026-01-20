@@ -653,6 +653,7 @@ def admin_panel(m):
                f"<b>Команды:</b>\n"
                f"/stats ID — Управление игроком\n"
                f"/broadcast — Сделать рассылку\n"
+               f"/give_nft - создать нфт\n"
                f"/setprice ЦЕНА — Изменение курса")
         bot.send_message(m.chat.id, txt, parse_mode="HTML")
     except Exception as e:
@@ -759,6 +760,42 @@ def start_broadcast(m):
     
 
 # ---------- ADMIN COMMANDS ----------
+
+@bot.message_handler(content_types=['photo', 'animation'], commands=['give_nft'])
+def give_nft(m):
+    if m.from_user.id != ADMIN_ID: return
+
+    try:
+        # Разбираем команду: /give_nft 12345678 Название NFT
+        parts = m.text.split(maxsplit=2) if m.text else m.caption.split(maxsplit=2)
+        if len(parts) < 3:
+            bot.reply_to(m, "📝 Инструкция: Прикрепи фото/гифку и напиши:\n`/give_nft ID Название`", parse_mode="Markdown")
+            return
+
+        target_id = int(parts[1])
+        nft_name = parts[2]
+        
+        # Получаем ID файла (фото или гифки)
+        file_id = m.photo[-1].file_id if m.content_type == 'photo' else m.animation.file_id
+        
+        nft_data = {
+            "name": nft_name,
+            "file_id": file_id,
+            "type": m.content_type,
+            "date": int(time.time())
+        }
+
+        # Добавляем в инвентарь пользователя
+        users.update_one({"_id": target_id}, {"$push": {"inventory": nft_data}})
+        
+        bot.send_message(m.chat.id, f"✅ NFT «{nft_name}» успешно отправлено игроку <code>{target_id}</code>!", parse_mode="HTML")
+        
+        # Уведомляем счастливчика
+        bot.send_message(target_id, f"🎉 Поздравляем! Ты получил уникальное NFT: <b>{nft_name}</b>\nПроверь свой 🎒 Мешок!", parse_mode="HTML")
+        
+    except Exception as e:
+        bot.reply_to(m, f"❌ Ошибка: {e}")
+
 
 @bot.message_handler(commands=["give"])
 def admin_give(m):
