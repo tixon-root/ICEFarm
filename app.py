@@ -338,6 +338,23 @@ def upgrade(m):
         logger.error(f"Ошибка upgrade: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
 
+#------------NFT------------
+
+@bot.message_handler(func=lambda m: m.text in ["🎒 Мешок", "/inv"])
+def show_inventory(m):
+    u = get_user(m.from_user.id, m.from_user.username)
+    inv = u.get("inventory", [])
+    
+    if not inv:
+        bot.send_message(m.chat.id, "📭 Твой мешок пуст. Коллекционируй NFT, чтобы они появились здесь!")
+        return
+
+    res = "🎒 <b>Твой склад NFT:</b>\n\n"
+    for i, item in enumerate(inv, 1):
+        res += f"{i}. 🖼 <b>{item['name']}</b>\n"
+    
+    bot.send_message(m.chat.id, res, parse_mode="HTML")
+
 #-------------SEND----------
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
 def send(m):
