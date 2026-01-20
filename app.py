@@ -28,7 +28,7 @@ ADMIN = os.getenv("ADMIN_USERNAME")
 # ---------- CONSTANTS (ВАЖНО!) ----------
 FARM_CD = 10800          # 3 часа
 CHANNEL_ID = "@BANCUS_RUCOY" 
-FEE = 1.0                # Комиссия для /send
+FEE = 0.1                # Комиссия для /send
 MIN_WITHDRAW = 30.0      
 FEE_GOLD = 3.0           
 FEE_BOT_TRANSFER = 1.0   
@@ -348,20 +348,32 @@ def upgrade(m):
 
 #------------NFT------------
 
-@bot.message_handler(func=lambda m: m.text in ["🎒 Мешок", "/inv"])
+@bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
 def show_inventory(m):
-    u = get_user(m.from_user.id, m.from_user.username)
-    inv = u.get("inventory", [])
-    
-    if not inv:
-        bot.send_message(m.chat.id, "📭 Твой мешок пуст. Коллекционируй NFT, чтобы они появились здесь!")
-        return
+    try:
+        # Берем ID темы, если она есть
+        t_id = getattr(m, 'message_thread_id', None)
+        
+        u = get_user(m.from_user.id, m.from_user.username, m.from_user.first_name)
+        inv = u.get("inventory", [])
+        
+        if not inv:
+            bot.send_message(m.chat.id, "📭 Твой инвентарь пуст.", message_thread_id=t_id)
+            return
 
-    res = "🎒 <b>Твой склад NFT:</b>\n\n"
-    for i, item in enumerate(inv, 1):
-        res += f"{i}. 🖼 <b>{item['name']}</b>\n"
-    
-    bot.send_message(m.chat.id, res, parse_mode="HTML")
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        for i, item in enumerate(inv):
+            kb.add(types.InlineKeyboardButton(f"🖼 {item['name']}", callback_data=f"view_nft_{i}"))
+        
+        bot.send_message(
+            m.chat.id, 
+            "🎒 <b>Твой инвентарь:</b>\nНажми на предмет, чтобы рассмотреть его.", 
+            parse_mode="HTML", 
+            reply_markup=kb,
+            message_thread_id=t_id
+        )
+    except Exception as e:
+        logger.error(f"Ошибка инвентаря: {e}")
 
 #-------------SEND----------
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
