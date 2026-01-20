@@ -121,7 +121,7 @@ def create_main_keyboard():
     """Главное меню"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add("⛏ Фарм", "⏫ Улучшить")
-    kb.add("🏆 Топ")
+    kb.add("🏆 Топ", "🎒 Инвентарь")
     kb.add("💸 Отправить", "👤 Профиль")
     return kb
     
