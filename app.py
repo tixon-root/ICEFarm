@@ -519,6 +519,29 @@ def top_callback(c):
         logger.error(f"Ошибка топа: {e}")
         bot.answer_callback_query(c.id, "❌ Ошибка загрузки данных")
 
+@bot.callback_query_handler(func=lambda c: c.data.startswith("view_nft_"))
+def view_nft_callback(c):
+    try:
+        t_id = getattr(c.message, 'message_thread_id', None)
+        u = users.find_one({"_id": c.from_user.id})
+        index = int(c.data.split("_")[2])
+        inv = u.get("inventory", [])
+        
+        if index < len(inv):
+            nft = inv[index]
+            if nft.get("type") == "photo":
+                bot.send_photo(c.message.chat.id, nft["file_id"], 
+                               caption=f"🖼 NFT: <b>{nft['name']}</b>", 
+                               parse_mode="HTML", message_thread_id=t_id)
+            else:
+                bot.send_animation(c.message.chat.id, nft["file_id"], 
+                                   caption=f"🖼 NFT: <b>{nft['name']}</b>", 
+                                   parse_mode="HTML", message_thread_id=t_id)
+        bot.answer_callback_query(c.id)
+    except Exception as e:
+        logger.error(f"Error viewing NFT: {e}")
+        bot.answer_callback_query(c.id, "❌ Ошибка")
+
 # ---------- BATTLE ----------
 
 # --- блок11---
@@ -774,40 +797,25 @@ def start_broadcast(m):
 # ---------- ADMIN COMMANDS ----------
 
 @bot.message_handler(content_types=['photo', 'animation'], commands=['give_nft'])
-def give_nft(m):
+def admin_give_nft(m):
     if m.from_user.id != ADMIN_ID: return
-
     try:
-        # Разбираем команду: /give_nft 12345678 Название NFT
+        t_id = getattr(m, 'message_thread_id', None)
         parts = m.text.split(maxsplit=2) if m.text else m.caption.split(maxsplit=2)
         if len(parts) < 3:
-            bot.reply_to(m, "📝 Инструкция: Прикрепи фото/гифку и напиши:\n`/give_nft ID Название`", parse_mode="Markdown")
+            bot.reply_to(m, "📝 Формат: `/give_nft ID Название`", parse_mode="Markdown")
             return
 
         target_id = int(parts[1])
         nft_name = parts[2]
-        
-        # Получаем ID файла (фото или гифки)
         file_id = m.photo[-1].file_id if m.content_type == 'photo' else m.animation.file_id
         
-        nft_data = {
-            "name": nft_name,
-            "file_id": file_id,
-            "type": m.content_type,
-            "date": int(time.time())
-        }
-
-        # Добавляем в инвентарь пользователя
+        nft_data = {"name": nft_name, "file_id": file_id, "type": m.content_type, "date": int(time.time())}
         users.update_one({"_id": target_id}, {"$push": {"inventory": nft_data}})
         
-        bot.send_message(m.chat.id, f"✅ NFT «{nft_name}» успешно отправлено игроку <code>{target_id}</code>!", parse_mode="HTML")
-        
-        # Уведомляем счастливчика
-        bot.send_message(target_id, f"🎉 Поздравляем! Ты получил уникальное NFT: <b>{nft_name}</b>\nПроверь свой 🎒 Мешок!", parse_mode="HTML")
-        
+        bot.send_message(m.chat.id, f"✅ NFT «{nft_name}» выдано {target_id}", message_thread_id=t_id)
     except Exception as e:
         bot.reply_to(m, f"❌ Ошибка: {e}")
-
 
 @bot.message_handler(commands=["give"])
 def admin_give(m):
@@ -961,28 +969,6 @@ def withdraw(m):
 
 #-----------------------------------------------------Handlers---------------------------
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("view_nft_"))
-def view_nft_callback(c):
-    try:
-        t_id = getattr(c.message, 'message_thread_id', None)
-        u = users.find_one({"_id": c.from_user.id})
-        index = int(c.data.split("_")[2])
-        inv = u.get("inventory", [])
-        
-        if index < len(inv):
-            nft = inv[index]
-            if nft.get("type") == "photo":
-                bot.send_photo(c.message.chat.id, nft["file_id"], 
-                               caption=f"🖼 NFT: <b>{nft['name']}</b>", 
-                               parse_mode="HTML", message_thread_id=t_id)
-            else:
-                bot.send_animation(c.message.chat.id, nft["file_id"], 
-                                   caption=f"🖼 NFT: <b>{nft['name']}</b>", 
-                                   parse_mode="HTML", message_thread_id=t_id)
-        
-        bot.answer_callback_query(c.id)
-    except Exception as e:
-        bot.answer_callback_query(c.id, "❌ Ошибка")
 
 # ---------- ERROR HANDLER ----------
 
