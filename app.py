@@ -98,19 +98,6 @@ def upgrade_price(level):
     """Старая дешевая цена: базовая 1 + 0.8 за каждый уровень"""
     return round(1 + level * 0.8, 2)
 
-def upgrade_price(level):
-    """Старая дешевая цена: базовая 1 + 0.8 за каждый уровень"""
-    return round(1 + level * 0.8, 2)
-
-def upgrade_price(level):
-    """Возвращаем старую доступную формулу цены"""
-    return round(1 + level * 0.8, 2)
-
-def upgrade_price(level):
-    """Прогрессивная цена: чем выше уровень, тем сложнее апать"""
-    # Формула делает апгрейд на высоких уровнях очень дорогим
-    return round(5 + (level ** 1.9), 2)
-
 def fmt(x): 
     return round(float(x), 2)
 
