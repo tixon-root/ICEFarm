@@ -338,14 +338,11 @@ def upgrade(m):
         logger.error(f"Ошибка upgrade: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
 
-#------------NFT------------
-
-@bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
+# --- Кнопка инвентаря (поддерживает текст и команду) ---
+@bot.message_handler(func=lambda m: m.text in ["🎒 Инвентарь", "/inv"])
 def show_inventory(m):
     try:
-        # Берем ID темы, если она есть
         t_id = getattr(m, 'message_thread_id', None)
-        
         u = get_user(m.from_user.id, m.from_user.username, m.from_user.first_name)
         inv = u.get("inventory", [])
         
@@ -355,17 +352,39 @@ def show_inventory(m):
 
         kb = types.InlineKeyboardMarkup(row_width=1)
         for i, item in enumerate(inv):
+            # i - это индекс предмета в массиве, его мы передаем в callback_data
             kb.add(types.InlineKeyboardButton(f"🖼 {item['name']}", callback_data=f"view_nft_{i}"))
         
-        bot.send_message(
-            m.chat.id, 
-            "🎒 <b>Твой инвентарь:</b>\nНажми на предмет, чтобы рассмотреть его.", 
-            parse_mode="HTML", 
-            reply_markup=kb,
-            message_thread_id=t_id
-        )
+        bot.send_message(m.chat.id, "🎒 <b>Твой инвентарь:</b>", reply_markup=kb, parse_mode="HTML", message_thread_id=t_id)
     except Exception as e:
         logger.error(f"Ошибка инвентаря: {e}")
+
+# --- Обработчик нажатия на кнопку предмета ---
+@bot.callback_query_handler(func=lambda c: c.data.startswith("view_nft_"))
+def view_nft_callback(c):
+    try:
+        t_id = getattr(c.message, 'message_thread_id', None)
+        # Получаем данные игрока
+        u = users.find_one({"_id": c.from_user.id})
+        # Вытаскиваем индекс из callback_data (view_nft_0 -> 0)
+        index = int(c.data.split("_")[2])
+        inv = u.get("inventory", [])
+        
+        if index < len(inv):
+            nft = inv[index]
+            if nft.get("type") == "photo":
+                bot.send_photo(c.message.chat.id, nft["file_id"], 
+                               caption=f"🖼 NFT: <b>{nft['name']}</b>", 
+                               parse_mode="HTML", message_thread_id=t_id)
+            else:
+                bot.send_animation(c.message.chat.id, nft["file_id"], 
+                                   caption=f"🖼 NFT: <b>{nft['name']}</b>", 
+                                   parse_mode="HTML", message_thread_id=t_id)
+        
+        bot.answer_callback_query(c.id)
+    except Exception as e:
+        logger.error(f"Ошибка показа NFT: {e}")
+        bot.answer_callback_query(c.id, "❌ Ошибка")
 
 #-------------SEND----------
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
