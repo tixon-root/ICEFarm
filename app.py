@@ -871,27 +871,32 @@ def get_current_price():
     price_doc = db.settings.find_one({"_id": "ice_price"})
     return price_doc["value"] if price_doc else "не установлен"
 
-@bot.message_handler(content_types=['photo', 'animation'], commands=['give_nft'])
+@bot.message_handler(content_types=['photo', 'animation'])
 def admin_give_nft(m):
-    # Проверка ADMIN_ID (убедись, что он задан в начале кода)
-    if m.from_user.id != ADMIN_ID: return
+    # 1. Проверка админа
+    if m.from_user.id != ADMIN_ID: 
+        return
     
+    # 2. Проверяем, есть ли текст команды в подписи (caption)
+    if not m.caption or not m.caption.startswith('/give_nft'):
+        return
+
     try:
         t_id = getattr(m, 'message_thread_id', None)
-        # Берем текст из самого сообщения или из подписи к фото/гифке
-        cmd_text = m.text or m.caption
-        if not cmd_text: return
-
-        parts = cmd_text.split(maxsplit=2)
+        parts = m.caption.split(maxsplit=2)
+        
         if len(parts) < 3:
-            bot.reply_to(m, "📝 <b>Формат:</b> /give_nft [ID] [Название]", parse_mode="HTML")
+            bot.reply_to(m, "📝 <b>Формат:</b> Прикрепите фото/гиф и подпишите:\n<code>/give_nft [ID] [Название]</code>", parse_mode="HTML")
             return
 
         target_id = int(parts[1])
         nft_name = parts[2]
         
-        # Берем ID файла
-        file_id = m.photo[-1].file_id if m.content_type == 'photo' else m.animation.file_id
+        # Определяем file_id в зависимости от типа
+        if m.content_type == 'photo':
+            file_id = m.photo[-1].file_id
+        else: # animation
+            file_id = m.animation.file_id
         
         nft_data = {
             "name": nft_name, 
@@ -901,12 +906,17 @@ def admin_give_nft(m):
         }
         
         # Записываем в базу
-        users.update_one({"_id": target_id}, {"$push": {"inventory": nft_data}})
-        bot.send_message(m.chat.id, f"✅ NFT «<b>{nft_name}</b>» выдано игроку <code>{target_id}</code>", 
-                         parse_mode="HTML", message_thread_id=t_id)
+        result = users.update_one({"_id": target_id}, {"$push": {"inventory": nft_data}})
+        
+        if result.matched_count > 0:
+            bot.send_message(m.chat.id, f"✅ NFT «<b>{nft_name}</b>» успешно выдано игроку <code>{target_id}</code>", 
+                             parse_mode="HTML", message_thread_id=t_id)
+        else:
+            bot.reply_to(m, "❌ Пользователь не найден в базе.")
                          
     except Exception as e:
-        bot.reply_to(m, f"❌ Ошибка выдачи: {e}")
+        logger.error(f"Ошибка выдачи NFT: {e}")
+        bot.reply_to(m, f"❌ Ошибка: {e}")
         
 #------вывод блят-------------
 
