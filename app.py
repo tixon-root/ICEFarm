@@ -360,7 +360,7 @@ def show_inventory(m):
         logger.error(f"Ошибка инвентаря: {e}")
 
 # --- Обработчик нажатия на кнопку предмета ---
-@@bot.callback_query_handler(func=lambda c: c.data.startswith("view_nft_"))
+@bot.callback_query_handler(func=lambda c: c.data.startswith("view_nft_"))
 def view_nft_callback(c):
     try:
         t_id = getattr(c.message, 'message_thread_id', None)
