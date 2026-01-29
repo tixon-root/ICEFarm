@@ -538,29 +538,6 @@ def top_callback(c):
         logger.error(f"Ошибка топа: {e}")
         bot.answer_callback_query(c.id, "❌ Ошибка загрузки данных")
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("view_nft_"))
-def view_nft_callback(c):
-    try:
-        t_id = getattr(c.message, 'message_thread_id', None)
-        u = users.find_one({"_id": c.from_user.id})
-        index = int(c.data.split("_")[2])
-        inv = u.get("inventory", [])
-        
-        if index < len(inv):
-            nft = inv[index]
-            if nft.get("type") == "photo":
-                bot.send_photo(c.message.chat.id, nft["file_id"], 
-                               caption=f"🖼 NFT: <b>{nft['name']}</b>", 
-                               parse_mode="HTML", message_thread_id=t_id)
-            else:
-                bot.send_animation(c.message.chat.id, nft["file_id"], 
-                                   caption=f"🖼 NFT: <b>{nft['name']}</b>", 
-                                   parse_mode="HTML", message_thread_id=t_id)
-        bot.answer_callback_query(c.id)
-    except Exception as e:
-        logger.error(f"Error viewing NFT: {e}")
-        bot.answer_callback_query(c.id, "❌ Ошибка")
-
 # ---------- BATTLE ----------
 
 # --- блок11---
