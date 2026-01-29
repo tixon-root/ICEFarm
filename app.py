@@ -386,7 +386,19 @@ def view_nft_callback(c):
         bot.answer_callback_query(c.id)
     except Exception as e:
         logger.error(f"Error: {e}")
-        
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("transfer_nft_"))
+def transfer_nft_start(c):
+    # Достаем индекс предмета из нажатой кнопки
+    index = int(c.data.split("_")[2])
+    
+    # Спрашиваем ID
+    msg = bot.send_message(c.message.chat.id, "👤 Введите **ID получателя**, которому хотите подарить этот предмет:")
+    
+    # Говорим боту: "Следующее сообщение от этого юзера отправь в функцию process_nft_transfer"
+    bot.register_next_step_handler(msg, process_nft_transfer, index)
+    bot.answer_callback_query(c.id)
+    
 #-------------SEND----------
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
 def send(m):
