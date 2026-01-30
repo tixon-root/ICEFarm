@@ -249,7 +249,25 @@ def profile(m):
     except Exception as e:
         logger.error(f"Ошибка профиля: {e}")
         bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.")
-        
+
+#----------------БАТЛИГРЫ------------
+@bot.message_handler(commands=['game'])
+def start_game_cmd(m):
+    if not m.reply_to_message:
+        return bot.reply_to(m, "❌ <b>Ошибка!</b> Напишите команду в ответ на сообщение того, кого зовете в игру.", parse_mode="HTML")
+    
+    challenger = m.from_user
+    opponent = m.reply_to_message.from_user
+    
+    if challenger.id == opponent.id:
+        return bot.reply_to(m, "❌ Нельзя играть с самим собой.")
+    if opponent.is_bot:
+        return bot.reply_to(m, "❌ Боты не умеют играть в футбол (пока что намёк на восстание).")
+
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("⚽ Football Penalties", callback_data=f"g_select_{opponent.id}"))
+    bot.send_message(m.chat.id, f"🎮 <b>{challenger.first_name}</b>, выберите игру:", reply_markup=kb, parse_mode="HTML")
+
 # ---------- FARM ----------
 
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
