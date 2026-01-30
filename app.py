@@ -903,6 +903,44 @@ def final_nft_step(m, target_id, file_id, file_type, name):
         bot.send_message(target_id, f"🎁 Вы получили NFT: **{name}**\n_{desc}_", parse_mode="Markdown")
     except: pass
 
+# --- ВКЛЮЧИТЬ VIP (Цепочка) ---
+@bot.message_handler(commands=['vipon'])
+def vip_on_start(m):
+    if m.from_user.id != ADMIN_ID: return
+    msg = bot.reply_to(m, "👤 Введите **ID игрока**, которому выдаем VIP:")
+    bot.register_next_step_handler(msg, vip_step_emoji)
+
+def vip_step_emoji(m):
+    try:
+        target_id = int(m.text)
+        msg = bot.send_message(m.chat.id, "🍀 Введите **один эмодзи** для профиля (например: 💎 или 🔥):")
+        bot.register_next_step_handler(msg, vip_step_media, target_id)
+    except:
+        bot.send_message(m.chat.id, "❌ Ошибка в ID. Отмена.")
+
+def vip_step_media(m, target_id):
+    emoji = m.text or "🍀"
+    msg = bot.send_message(m.chat.id, "🖼 Теперь пришлите **фото/гиф** для фона (или /skip):")
+    bot.register_next_step_handler(msg, vip_final, target_id, emoji)
+
+def vip_final(m, target_id, emoji):
+    bg_id = None
+    bg_type = None
+    
+    if m.content_type in ['photo', 'animation']:
+        bg_id = m.photo[-1].file_id if m.content_type == 'photo' else m.animation.file_id
+        bg_type = m.content_type
+
+    users.update_one({"_id": target_id}, {
+        "$set": {
+            "is_vip": True,
+            "vip_emoji": emoji,
+            "vip_background": bg_id,
+            "vip_type": bg_type
+        }
+    })
+    bot.send_message(m.chat.id, f"✅ VIP для <code>{target_id}</code> настроен!", parse_mode="HTML")
+
 # Команда для установки курса (только для админа)
 @bot.message_handler(commands=["setprice"])
 def set_price(m):
