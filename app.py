@@ -1162,17 +1162,6 @@ def withdraw(m):
         bot.reply_to(m, "❌ Используйте: <code>gold</code> или <code>bot</code>", parse_mode="HTML")
 
 #-----------------------------------------------------Handlers---------------------------
-
-def g_send_turn(chat_id, game_id):
-    game = active_games[game_id]
-    keeper = game['p1'] # Кто сейчас вратарь
-    
-    kb = types.InlineKeyboardMarkup(row_width=3)
-    btns = [types.InlineKeyboardButton("⭕", callback_data=f"kick_{game_id}_{i}") for i in range(1, 7)]
-    kb.add(*btns)
-    
-    bot.send_message(chat_id, f"🥅 <b>Игрок</b> @{game['names'][keeper]}, выберите место защиты (60с):", 
-                     reply_markup=kb, parse_mode="HTML")
     
 # ---------- LOGIC: FOOTBALL PENALTIES ----------
 
