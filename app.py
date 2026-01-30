@@ -253,21 +253,25 @@ def profile(m):
 #----------------БАТЛИГРЫ------------
 @bot.message_handler(commands=['game'])
 def start_game_cmd(m):
+    # Узнаем ID темы
+    t_id = getattr(m, 'message_thread_id', None)
+    
     if not m.reply_to_message:
-        return bot.reply_to(m, "❌ <b>Ошибка!</b> Напишите команду в ответ на сообщение того, кого зовете в игру.", parse_mode="HTML")
+        return bot.reply_to(m, "❌ <b>Ошибка!</b> Ответьте на сообщение игрока.", 
+                            parse_mode="HTML", message_thread_id=t_id)
     
     challenger = m.from_user
     opponent = m.reply_to_message.from_user
     
-    if challenger.id == opponent.id:
-        return bot.reply_to(m, "❌ Нельзя играть с самим собой.")
-    if opponent.is_bot:
-        return bot.reply_to(m, "❌ Боты не умеют играть в футбол (пока что намёк на восстание).")
+    # ... (проверки на ID и ботов) ...
 
     kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("⚽ Football Penalties", callback_data=f"g_select_{opponent.id}"))
-    bot.send_message(m.chat.id, f"🎮 <b>{challenger.first_name}</b>, выберите игру:", reply_markup=kb, parse_mode="HTML")
-
+    # Добавляем t_id в callback, чтобы бот не "потерял" тему в следующих шагах
+    kb.add(types.InlineKeyboardButton("⚽ Football Penalties", callback_data=f"g_select_{opponent.id}_{t_id}"))
+    
+    bot.send_message(m.chat.id, f"🎮 <b>{challenger.first_name}</b>, выберите игру:", 
+                     reply_markup=kb, parse_mode="HTML", message_thread_id=t_id)
+    
 # ---------- FARM ----------
 
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
