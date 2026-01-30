@@ -1174,17 +1174,137 @@ def g_send_turn(chat_id, game_id):
     bot.send_message(chat_id, f"🥅 <b>Игрок</b> @{game['names'][keeper]}, выберите место защиты (60с):", 
                      reply_markup=kb, parse_mode="HTML")
     
-# ---------- ERROR HANDLER ----------
+# ---------- LOGIC: FOOTBALL PENALTIES ----------
+
+def get_goal_kb(game_id, is_keeper=True):
+    """Клавиатура ворот: 6 зон"""
+    emoji = "🧤" if is_keeper else "⚽"
+    kb = types.InlineKeyboardMarkup(row_width=3)
+    # Формат: p_hit_[game_id]_[зона]
+    btns = [types.InlineKeyboardButton("⭕", callback_data=f"p_hit_{game_id}_{i}") for i in range(1, 7)]
+    # Рандомно ставим иконку в одну из кнопок для красоты
+    import random
+    idx = random.randint(0, 5)
+    btns[idx].text = emoji
+    kb.add(*btns)
+    return kb
+
+def g_send_turn(chat_id, game_id):
+    """Отправка сообщения о текущем ходе"""
+    if game_id not in active_games: return
+    game = active_games[game_id]
+    t_id = game.get("t_id")
+    
+    # Вратарь определяется по текущему количеству ударов (смена ролей)
+    # shots: 0,1 - раунд 1; 2,3 - раунд 2 и т.д.
+    is_p1_keeper = (game['shots'] // 1) % 2 == 0
+    keeper_id = game['p1'] if is_p1_keeper else game['p2']
+    
+    bot.send_message(
+        chat_id, 
+        f"🥅 <b>Игрок</b> @{game['names'][keeper_id]}, выберите место защиты!\n(У вас 60 секунд)", 
+        reply_markup=get_goal_kb(game_id, True), 
+        parse_mode="HTML", 
+        message_thread_id=t_id
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("p_hit_"))
+def g_kick_logic(c):
+    """Логика ударов и сейвов"""
+    data = c.data.split("_")
+    game_id = data[2]
+    choice = int(data[3])
+    
+    if game_id not in active_games:
+        return bot.answer_callback_query(c.id, "❌ Игра завершена или не найдена.")
+    
+    game = active_games[game_id]
+    t_id = game.get("t_id")
+    
+    # Определяем кто вратарь, кто бьющий
+    is_p1_keeper = (game['shots'] // 1) % 2 == 0
+    keeper_id = game['p1'] if is_p1_keeper else game['p2']
+    striker_id = game['p2'] if is_p1_keeper else game['p1']
+
+    # 1. ХОД ВРАТАРЯ
+    if game['state'] == "wait_keeper":
+        if c.from_user.id != keeper_id:
+            return bot.answer_callback_query(c.id, "🧤 Сейчас вы вратарь, ждите своего хода!", show_alert=True)
+        
+        game['keeper_pos'] = choice
+        game['state'] = "wait_striker"
+        
+        bot.edit_message_text(
+            f"🥅 Вратарь выбрал зону защиты!\n⚽ @{game['names'][striker_id]}, теперь ваш удар!",
+            c.message.chat.id, c.message.message_id,
+            reply_markup=get_goal_kb(game_id, False),
+            parse_mode="HTML"
+        )
+
+    # 2. ХОД БЬЮЩЕГО
+    elif game['state'] == "wait_striker":
+        if c.from_user.id != striker_id:
+            return bot.answer_callback_query(c.id, "⚽ Сейчас не ваш черед бить!", show_alert=True)
+        
+        # Сравнение выбора
+        if choice == game['keeper_pos']:
+            res_text = f"🧤 <b>СЕЙВ!</b> @{game['names'][keeper_id]} отбил мяч!"
+        else:
+            res_text = f"⚽ <b>ГОООЛ!</b> @{game['names'][striker_id]} забивает!"
+            game['score'][striker_id] += 1
+            
+        game['shots'] += 1
+        
+        # Проверка конца игры (после 6 действий = 3 полных раунда)
+        if game['shots'] >= 6:
+            bot.edit_message_text(f"{res_text}\n\nФинальный свисток! 🏁", c.message.chat.id, c.message.message_id)
+            finish_penalty_game(c.message.chat.id, game_id, t_id)
+        else:
+            game['state'] = "wait_keeper"
+            game['keeper_pos'] = None
+            
+            # Показываем счет
+            p1, p2 = game['p1'], game['p2']
+            score_text = f"\n\n📊 Счёт:\n@{game['names'][p1]}: {game['score'][p1]}\n@{game['names'][p2]}: {game['score'][p2]}"
+            
+            bot.edit_message_text(res_text + score_text, c.message.chat.id, c.message.message_id)
+            # Переходим к следующему раунду
+            g_send_turn(c.message.chat.id, game_id)
+
+def finish_penalty_game(chat_id, game_id, t_id):
+    """Завершение игры, выдача приза"""
+    game = active_games[game_id]
+    p1_id, p2_id = game['p1'], game['p2']
+    s1, s2 = game['score'][p1_id], game['score'][p2_id]
+    win_sum = game['bet'] * 2
+    
+    txt = f"🏁 <b>МАТЧ ЗАВЕРШЕН</b>\n━━━━━━━━━━━━━━\n"
+    txt += f"👤 @{game['names'][p1_id]}: {s1}\n"
+    txt += f"👤 @{game['names'][p2_id]}: {s2}\n━━━━━━━━━━━━━━\n"
+
+    if s1 > s2:
+        users.update_one({"_id": p1_id}, {"$inc": {"balance": win_sum, "wins": 1}})
+        txt += f"🏆 Победитель: @{game['names'][p1_id]} (+{win_sum} ICE)"
+    elif s2 > s1:
+        users.update_one({"_id": p2_id}, {"$inc": {"balance": win_sum, "wins": 1}})
+        txt += f"🏆 Победитель: @{game['names'][p2_id]} (+{win_sum} ICE)"
+    else:
+        # Ничья
+        users.update_one({"_id": p1_id}, {"$inc": {"balance": game['bet']}})
+        users.update_one({"_id": p2_id}, {"$inc": {"balance": game['bet']}})
+        txt += "🤝 <b>Ничья!</b> Ставки возвращены игрокам."
+
+    bot.send_message(chat_id, txt, parse_mode="HTML", message_thread_id=t_id)
+    if game_id in active_games:
+        del active_games[game_id]
+
+# ---------- ERROR & UNKNOWN ----------
 
 @bot.message_handler(func=lambda m: True)
 def unknown_command(m):
-    # Если сообщение пришло из группы — просто игнорируем его
-    if m.chat.type != 'private':
-        return
-        
-    # Если в личке — подсказываем
+    if m.chat.type != 'private': return
     bot.reply_to(m, "❓ Неизвестная команда. Используйте меню или /start")
-
+# 
 # ---------- RUN ----------
 
 if __name__ == "__main__":
