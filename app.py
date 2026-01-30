@@ -645,12 +645,14 @@ def g_accept(c):
     if c.from_user.id != battle['opponent']:
         return bot.answer_callback_query(c.id, "❌ Это не ваш вызов!")
 
-    t_id = battle.get("thread_id")
-    del pending_battles[b_id]
+    # Генерируем кнопки ставок
+    kb = types.InlineKeyboardMarkup(row_width=3)
+    # Формат колбэка: g_bet_[b_id]_[сумма]
+    btns = [types.InlineKeyboardButton(f"{x} ❄️", callback_data=f"g_bet_{b_id}_{x}") for x in [1, 5, 10, 25, 50, 100]]
+    kb.add(*btns)
     
-    msg = bot.send_message(c.message.chat.id, f"💰 <b>{c.from_user.first_name}</b>, введите ставку ICE:", message_thread_id=t_id)
-    # ПЕРЕДАЕМ t_id в следующий шаг
-    bot.register_next_step_handler(msg, g_setup_bet, battle, t_id)
+    bot.edit_message_text("💰 Выберите ставку для игры в Пенальти:", 
+                          c.message.chat.id, c.message.message_id, reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_decline_"))
 def g_decline(c):
