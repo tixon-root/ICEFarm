@@ -614,17 +614,25 @@ def battle_call(m):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_select_"))
 def g_select_game(c):
-    opp_id = int(c.data.split("_")[2])
+    data = c.data.split("_")
+    opp_id = int(data[2])
+    # Вытягиваем thread_id, если он есть
+    t_id = getattr(c.message, 'message_thread_id', None)
+    
     chall_id = c.from_user.id
     b_id = f"{chall_id}_{opp_id}"
     
-    pending_battles[b_id] = {"challenger": chall_id, "opponent": opp_id, "time": int(time.time())}
+    pending_battles[b_id] = {
+        "challenger": chall_id, 
+        "opponent": opp_id, 
+        "thread_id": t_id # ЗАПОМИНАЕМ ТЕМУ
+    }
     
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("✅ Принять", callback_data=f"g_accept_{b_id}"),
            types.InlineKeyboardButton("❌ Отказаться", callback_data=f"g_decline_{b_id}"))
     
-    bot.edit_message_text(f"⚔️ Игрок <b>{c.from_user.first_name}</b> вызывает на баттл <b>Пенальти</b>!\n\nУ оппонента есть 5 минут.", 
+    bot.edit_message_text(f"⚔️ Игрок <b>{c.from_user.first_name}</b> вызывает на баттл <b>Пенальти</b>!", 
                           c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode="HTML")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_accept_"))
@@ -637,10 +645,12 @@ def g_accept(c):
     if c.from_user.id != battle['opponent']:
         return bot.answer_callback_query(c.id, "❌ Это не ваш вызов!")
 
-    # Удаляем из ожиданий и просим ставку
+    t_id = battle.get("thread_id")
     del pending_battles[b_id]
-    msg = bot.send_message(c.message.chat.id, f"💰 <b>{c.from_user.first_name}</b>, введите ставку ICE:")
-    bot.register_next_step_handler(msg, g_setup_bet, battle)
+    
+    msg = bot.send_message(c.message.chat.id, f"💰 <b>{c.from_user.first_name}</b>, введите ставку ICE:", message_thread_id=t_id)
+    # ПЕРЕДАЕМ t_id в следующий шаг
+    bot.register_next_step_handler(msg, g_setup_bet, battle, t_id)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_decline_"))
 def g_decline(c):
