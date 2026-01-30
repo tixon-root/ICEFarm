@@ -607,6 +607,41 @@ def battle_call(m):
     bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode="HTML", message_thread_id=m.message_thread_id)
 
 # --- Обработка кнопок ---
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("g_select_"))
+def g_select_game(c):
+    opp_id = int(c.data.split("_")[2])
+    chall_id = c.from_user.id
+    b_id = f"{chall_id}_{opp_id}"
+    
+    pending_battles[b_id] = {"challenger": chall_id, "opponent": opp_id, "time": int(time.time())}
+    
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("✅ Принять", callback_data=f"g_accept_{b_id}"),
+           types.InlineKeyboardButton("❌ Отказаться", callback_data=f"g_decline_{b_id}"))
+    
+    bot.edit_message_text(f"⚔️ Игрок <b>{c.from_user.first_name}</b> вызывает на баттл <b>Пенальти</b>!\n\nУ оппонента есть 5 минут.", 
+                          c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode="HTML")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("g_accept_"))
+def g_accept(c):
+    b_id = c.data.replace("g_accept_", "")
+    if b_id not in pending_battles:
+        return bot.answer_callback_query(c.id, "❌ Вызов истек.")
+    
+    battle = pending_battles[b_id]
+    if c.from_user.id != battle['opponent']:
+        return bot.answer_callback_query(c.id, "❌ Это не ваш вызов!")
+
+    # Удаляем из ожиданий и просим ставку
+    del pending_battles[b_id]
+    msg = bot.send_message(c.message.chat.id, f"💰 <b>{c.from_user.first_name}</b>, введите ставку ICE:")
+    bot.register_next_step_handler(msg, g_setup_bet, battle)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("g_decline_"))
+def g_decline(c):
+    bot.edit_message_text("🚫 Вызов отклонен.", c.message.chat.id, c.message.message_id)
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("b_"))
 def battle_callback(c):
     data = c.data.split("_")
