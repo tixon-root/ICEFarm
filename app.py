@@ -204,53 +204,50 @@ def start(m):
         bot.send_message(m.chat.id, "❌ Произошла ошибка")
 
 # ---------- PROFILE ----------
-
 @bot.message_handler(func=lambda m: m.text in ["👤 Профиль", "/profile"])
 def profile(m):
-    """Показать профиль"""
     try:
         u = get_user(m.from_user.id, m.from_user.username)
-        if not u:
-            # Безопасная отправка сообщения (проверка на наличие темы)
-            t_id = getattr(m, 'message_thread_id', None)
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=t_id)
-            return
-
+        t_id = getattr(m, 'message_thread_id', None)
+        
+        # Расчет времени фарма
         now = int(time.time())
-        # БЕЗОПАСНО: используем .get("farm", 0) вместо ["farm"]
-        last_farm = u.get("farm", 0)
-        next_farm = last_farm + FARM_CD - now
-        
-        if next_farm <= 0:
-            farm_status = "✅ Доступно!"
-        else:
-            # Считаем часы и минуты для красоты
-            mins = next_farm // 60
-            farm_status = f"⏳ Через {mins} мин"
-        
-                # Внутри profile(m)
-        txt = (f"👤 <b>Профиль @{u['username']}</b>\n\n"
-               f"💰 Баланс: <b>{fmt(u['balance'])} ICE</b>\n"
-               f"⛏ Уровень: <b>{u['level']}</b>\n"
-               f"📈 Доход: <b>{farm_amount(u['level'])} ICE</b>\n" # Берет новую формулу
-               f"⏫ Цена апа: <b>{upgrade_price(u['level'])} ICE</b>\n" # Берет дешевую формулу
-               f"🏆 Побед: {u.get('wins', 0)}\n\n"
-               f"⛏ Статус: {farm_status}")
+        next_farm = u.get("farm", 0) + FARM_CD - now
+        farm_status = "✅ Доступен" if next_farm <= 0 else f"⏳ {next_farm // 60} мин"
 
+        # Настройка VIP элементов
+        is_vip = u.get("is_vip", False)
+        status_emoji = u.get("vip_emoji", "👤") if is_vip else "👤"
         
-        bot.send_message(
-            m.chat.id, 
-            txt, 
-            parse_mode="HTML",
-            message_thread_id=getattr(m, 'message_thread_id', None)
+        # Формируем текст по твоему шаблону
+        # Используем <code> для выравнивания чисел
+        txt = (
+            f"╔═══ 👤 <b>ПРОФИЛЬ ИГРОКА</b> ═══╗\n"
+            f"┃ {status_emoji} <b>Юзер:</b> @{u['username']}\n"
+            f"┣━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"┃ 💰 <b>Баланс:</b>    <code>{fmt(u['balance'])} ICE</code>\n"
+            f"┃ ⛏ <b>Уровень:</b>    <code>{u['level']}</code>\n"
+            f"┃ 📈 <b>Доход/цикл:</b> <code>{farm_amount(u['level'])} ICE</code>\n"
+            f"┃ ⏫ <b>Апгрейд:</b>    <code>{upgrade_price(u['level'])} ICE</code>\n"
+            f"┃ 🏆 <b>Победы:</b>     <code>{u.get('wins', 0)}</code>\n"
+            f"┣━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"┃ ⛏ <b>Майнинг:</b>    {farm_status}\n"
+            f"╚═══════════════════════╝"
         )
 
-    except Exception as e:
-        logger.error(f"Ошибка profile: {e}")
-        # Если ошибка всё же случилась, бот не просто молчит, а пишет лог
-        bot.send_message(m.chat.id, "❌ Произошла ошибка в профиле", 
-                         message_thread_id=getattr(m, 'message_thread_id', None))
+        bg = u.get("vip_background")
+        if is_vip and bg:
+            if u.get("vip_type") == "photo":
+                bot.send_photo(m.chat.id, bg, caption=txt, parse_mode="HTML", message_thread_id=t_id)
+            else:
+                bot.send_animation(m.chat.id, bg, caption=txt, parse_mode="HTML", message_thread_id=t_id)
+        else:
+            bot.send_message(m.chat.id, txt, parse_mode="HTML", message_thread_id=t_id)
 
+    except Exception as e:
+        logger.error(f"Ошибка профиля: {e}")
+        bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.")
+        
 # ---------- FARM ----------
 
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
