@@ -1108,7 +1108,45 @@ def withdraw(m):
 
 #-----------------------------------------------------Handlers---------------------------
 
+def g_setup_bet(m, battle):
+    try:
+        bet = float(m.text)
+        if bet < 0: raise ValueError
+        
+        u1 = get_user(battle['challenger'])
+        u2 = get_user(battle['opponent'])
 
+        if u1['balance'] < bet or u2['balance'] < bet:
+            return bot.send_message(m.chat.id, "❌ Недостаточно средств у одного из игроков.")
+
+        # Снимаем ICE
+        users.update_one({"_id": u1["_id"]}, {"$inc": {"balance": -bet}})
+        users.update_one({"_id": u2["_id"]}, {"$inc": {"balance": -bet}})
+
+        game_id = f"f_{int(time.time())}"
+        active_games[game_id] = {
+            "p1": u2["_id"], "p2": u1["_id"], # p1 принял (защита), p2 бросил (удар)
+            "names": {u1["_id"]: u1['username'], u2["_id"]: u2['username']},
+            "score": {u1["_id"]: 0, u2["_id"]: 0},
+            "shots": {u1["_id"]: 0, u2["_id"]: 0},
+            "state": "waiting_keeper", "bet": bet, "last_choice": None
+        }
+        
+        g_send_turn(m.chat.id, game_id)
+    except:
+        bot.send_message(m.chat.id, "❌ Ошибка! Введите число.")
+
+def g_send_turn(chat_id, game_id):
+    game = active_games[game_id]
+    keeper = game['p1'] # Кто сейчас вратарь
+    
+    kb = types.InlineKeyboardMarkup(row_width=3)
+    btns = [types.InlineKeyboardButton("⭕", callback_data=f"kick_{game_id}_{i}") for i in range(1, 7)]
+    kb.add(*btns)
+    
+    bot.send_message(chat_id, f"🥅 <b>Игрок</b> @{game['names'][keeper]}, выберите место защиты (60с):", 
+                     reply_markup=kb, parse_mode="HTML")
+    
 # ---------- ERROR HANDLER ----------
 
 @bot.message_handler(func=lambda m: True)
