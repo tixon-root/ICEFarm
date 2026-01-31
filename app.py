@@ -587,86 +587,61 @@ def battle_call(m):
     bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode="HTML", message_thread_id=m.message_thread_id)
 
 # --- Обработка кнопок ---
+@bot.callback_query_handler(func=lambda c: c.data.startswith("b_"))
+def battle_callback_handler(c):
+    try:
+        # Разбираем callback: b_action_bid_bet
+        data = c.data.split("_")
+        action = data[1]
+        bid = ObjectId(data[2])
+        battle = battles.find_one({"_id": bid})
 
+        if not battle:
+            return bot.answer_callback_query(c.id, "❌ Батл уже завершен или не найден.")
 
-    # --- ОТКАЗ ---
-    if action == "den":
-        if c.from_user.id != battle["opponent_id"]:
-            bot.answer_callback_query(c.id, "Это не ваш вызов!")
-            return
-        bot.edit_message_text("❌ Батл был отклонен.", battle["chat_id"], c.message.message_id)
-        battles.delete_one({"_id": bid})
-
-    # --- ПРИНЯТИЕ (Выбор ставки) ---
-    elif action == "acc":
-        if c.from_user.id != battle["opponent_id"]:
-            bot.answer_callback_query(c.id, "Это не ваш вызов!")
-            return
-        
-        kb = types.InlineKeyboardMarkup(row_width=3)
-        btns = [types.InlineKeyboardButton(f"{x} ❄️", callback_data=f"b_bet_{bid}_{x}") for x in [1, 5, 10, 25, 50, 100]]
-        kb.add(*btns)
-        
-        bot.edit_message_text("💰 Выберите ставку для батла:", battle["chat_id"], c.message.message_id, reply_markup=kb)
-
-    # --- СТАВКА ВЫБРАНА (Начало игры) ---
-    elif action == "bet":
-        bet = float(data[3])
-        if c.from_user.id != battle["opponent_id"]:
-            bot.answer_callback_query(c.id, "Ставку должен выбрать тот, кого вызвали!")
-            return
-
-        # Проверка баланса у обоих
-        p1 = users.find_one({"_id": battle["challenger_id"]})
-        p2 = users.find_one({"_id": battle["opponent_id"]})
-
-        if p1["balance"] < bet or p2["balance"] < bet:
-            bot.send_message(battle["chat_id"], "❌ У одного из игроков не хватает ICE!", message_thread_id=battle["thread_id"])
+        # --- ОТКАЗ ---
+        if action == "den":
+            if c.from_user.id != battle["opponent_id"]:
+                return bot.answer_callback_query(c.id, "Это не ваш вызов!")
+            
+            bot.edit_message_text("❌ Батл был отклонен.", battle["chat_id"], c.message.message_id)
             battles.delete_one({"_id": bid})
-            return
 
-        # Начинаем процесс бросков
-        bot.delete_message(battle["chat_id"], c.message.message_id)
-        run_battle(battle, bet)
+        # --- ПРИНЯТИЕ (Выбор ставки) ---
+        elif action == "acc":
+            if c.from_user.id != battle["opponent_id"]:
+                return bot.answer_callback_query(c.id, "Это не ваш вызов!")
+            
+            kb = types.InlineKeyboardMarkup(row_width=3)
+            btns = [types.InlineKeyboardButton(f"{x} ❄️", callback_data=f"b_bet_{bid}_{x}") for x in [1, 5, 10, 25, 50, 100]]
+            kb.add(*btns)
+            
+            bot.edit_message_text("💰 Выберите ставку для батла:", battle["chat_id"], c.message.message_id, reply_markup=kb)
 
-def run_battle(battle, bet):
-    chat_id = battle["chat_id"]
-    t_id = battle["thread_id"]
+        # --- СТАВКА ВЫБРАНА (Начало игры) ---
+        elif action == "bet":
+            bet = float(data[3])
+            if c.from_user.id != battle["opponent_id"]:
+                return bot.answer_callback_query(c.id, "Ставку должен выбрать тот, кого вызвали!")
 
-    # Бросок первого (вызвавшего)
-    msg1 = bot.send_message(chat_id, f"🎲 Первым бросает <b>{battle['challenger_name']}</b>...", parse_mode="HTML", message_thread_id=t_id)
-    dice1 = bot.send_dice(chat_id, message_thread_id=t_id)
-    val1 = dice1.dice.value
-    time.sleep(4) # Ждем пока кубик докрутится
+            # Проверка баланса у обоих
+            p1 = users.find_one({"_id": battle["challenger_id"]})
+            p2 = users.find_one({"_id": battle["opponent_id"]})
 
-    # Бросок второго (принявшего)
-    msg2 = bot.send_message(chat_id, f"🎲 Теперь куб бросает <b>{battle['opponent_name']}</b>...", parse_mode="HTML", message_thread_id=t_id)
-    dice2 = bot.send_dice(chat_id, message_thread_id=t_id)
-    val2 = dice2.dice.value
-    time.sleep(4)
+            if not p1 or not p2 or p1.get("balance", 0) < bet or p2.get("balance", 0) < bet:
+                bot.send_message(battle["chat_id"], "❌ У одного из игроков не хватает ICE!", message_thread_id=battle["thread_id"])
+                battles.delete_one({"_id": bid})
+                bot.delete_message(battle["chat_id"], c.message.message_id)
+                return
 
-    # Определение победителя
-    winner_id = None
-    if val1 > val2:
-        winner_id, winner_name = battle["challenger_id"], battle["challenger_name"]
-        loser_id = battle["opponent_id"]
-    elif val2 > val1:
-        winner_id, winner_name = battle["opponent_id"], battle["opponent_name"]
-        loser_id = battle["challenger_id"]
-    else:
-        bot.send_message(chat_id, "🤝 Ничья! ICE остаются при своих.", message_thread_id=t_id)
-        battles.delete_one({"_id": battle["_id"]})
-        return
+            # Удаляем сообщение с выбором ставки и запускаем кубики
+            bot.delete_message(battle["chat_id"], c.message.message_id)
+            run_battle(battle, bet)
 
-    # Начисление/Списание
-    users.update_one({"_id": winner_id}, {"$inc": {"balance": bet, "wins": 1}})
-    users.update_one({"_id": loser_id}, {"$inc": {"balance": -bet}})
-
-    bot.send_message(chat_id, f"🏆 Победил <b>{winner_name}</b>!\n💰 Счет пополнен на <b>+{bet} ICE</b>", 
-                     parse_mode="HTML", message_thread_id=t_id)
-    
-    battles.delete_one({"_id": battle["_id"]})
-
+    except Exception as e:
+        logger.error(f"Ошибка в battle_callback: {e}")
+        bot.answer_callback_query(c.id, "⚠️ Произошла ошибка.")
+        
 # ---------- ОБЪЕДИНЕННАЯ АДМИН-СИСТЕМА ----------
 
 @bot.message_handler(commands=["admin"])
