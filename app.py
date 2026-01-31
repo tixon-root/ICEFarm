@@ -161,21 +161,52 @@ def set_webhook():
         return jsonify({"error": str(e)}), 500
 
 # ---------- START ----------
-
 @bot.message_handler(commands=["start"])
 def start(m):
-    """Команда /start"""
+    """Команда /start с реферальной системой и статистикой"""
     try:
-        # ПРОВЕРКА: Если это не личные сообщения (private), бот просто игнорирует команду
         if m.chat.type != "private":
             return 
 
-        u = get_user(m.from_user.id, m.from_user.username)
+        uid = m.from_user.id
+        ref_id = None
+        
+        # 1. ПРОВЕРКА РЕФЕРАЛЬНОГО КОДА
+        if len(m.text.split()) > 1:
+            payload = m.text.split()[1]
+            if payload.startswith("ref_"):
+                try:
+                    ref_id = int(payload.replace("ref_", ""))
+                except:
+                    ref_id = None
+
+        # 2. ПРОВЕРЯЕМ, НОВЫЙ ЛИ ЮЗЕР (до того как get_user его создаст)
+        is_new_user = users.find_one({"_id": uid}) is None
+        
+        # 3. ПОЛУЧАЕМ/СОЗДАЕМ ЮЗЕРА
+        u = get_user(uid, m.from_user.username, m.from_user.first_name)
         if not u:
             bot.send_message(m.chat.id, "❌ Ошибка получения данных")
             return
 
-        # ПОЛУЧАЕМ АКТУАЛЬНУЮ ЦЕНУ
+        # 4. НАЧИСЛЯЕМ БОНУС, ЕСЛИ ЭТО НОВИЧОК
+        if is_new_user and ref_id and ref_id != uid:
+            referrer = users.find_one({"_id": ref_id})
+            if referrer:
+                # Проверка VIP (у обычных +10, у VIP +15)
+                # Предположим, VIP определяется по уровню > 5 или по полю is_vip
+                is_vip = referrer.get("is_vip", False) 
+                bonus = 15 if is_vip else 10
+                
+                users.update_one({"_id": ref_id}, {"$inc": {"balance": bonus}})
+                users.update_one({"_id": uid}, {"$set": {"referrer": ref_id}})
+                
+                try:
+                    bot.send_message(ref_id, f"💎 У вас новый реферал! Вам начислено <b>+{bonus} ICE</b>", parse_mode="HTML")
+                except:
+                    pass
+
+        # 5. ТВОЯ КРАСИВАЯ СТАТИСТИКА
         price_doc = settings.find_one({"_id": "ice_price"})
         current_price = price_doc["value"] if price_doc else "не установлен"
 
@@ -192,7 +223,6 @@ def start(m):
 
 <i>Выберите действие из меню:</i>
 """
-        # Кнопки (ReplyKeyboardMarkup) отправляются только здесь
         bot.send_message(
             m.chat.id, 
             txt, 
