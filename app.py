@@ -36,8 +36,6 @@ ADMIN_ID = 6395348885
 
 # ---------- INIT ----------
 bot = telebot.TeleBot(TOKEN, threaded=False)
-pending_battles = {}  # Ожидающие вызовы
-active_games = {}    # Идущие матчи
 app = Flask(__name__)
 
 # ---------- DB ----------
