@@ -656,42 +656,52 @@ def g_accept(c):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_bet_"))
 def g_process_bet_btn(c):
-    data = c.data.split("_")
-    b_id = data[2]
-    bet = float(data[3])
-    
-    if b_id not in pending_battles:
-        return bot.answer_callback_query(c.id, "❌ Ошибка вызова.")
-    
-    battle = pending_battles[b_id]
-    t_id = battle.get("thread_id")
-    
-    # Проверка баланса обоих игроков
-    u1 = get_user(battle['challenger'])
-    u2 = get_user(battle['opponent'])
+    try:
+        data = c.data.split("_")
+        b_id = data[2]
+        bet = float(data[3])
+        
+        if b_id not in pending_battles:
+            return bot.answer_callback_query(c.id, "❌ Ошибка вызова. Попробуйте еще раз.")
+        
+        battle = pending_battles[b_id]
+        t_id = battle.get("thread_id")
+        
+        # ИСПРАВЛЕНИЕ ТУТ: передаем None вторым аргументом
+        u1 = get_user(battle['challenger'], None)
+        u2 = get_user(battle['opponent'], None)
 
-    if u1['balance'] < bet or u2['balance'] < bet:
-        return bot.answer_callback_query(c.id, "❌ У одного из игроков не хватает ICE!", show_alert=True)
+        if not u1 or not u2:
+            return bot.answer_callback_query(c.id, "❌ Ошибка профилей.")
 
-    # Удаляем из очереди ожиданий
-    del pending_battles[b_id]
+        if u1['balance'] < bet or u2['balance'] < bet:
+            return bot.answer_callback_query(c.id, "❌ У одного из игроков не хватает ICE!", show_alert=True)
 
-    # Списываем баланс
-    users.update_one({"_id": u1["_id"]}, {"$inc": {"balance": -bet}})
-    users.update_one({"_id": u2["_id"]}, {"$inc": {"balance": -bet}})
+        # Удаляем из очереди ожиданий
+        del pending_battles[b_id]
 
-    # Создаем игру (активируем "футбольное поле")
-    game_id = f"f_{int(time.time())}"
-    active_games[game_id] = {
-        "p1": u2["_id"], "p2": u1["_id"], # p1 - кто принял (вратарь), p2 - кто вызвал (бьющий)
-        "names": {u1["_id"]: u1['username'], u2["_id"]: u2['username']},
-        "score": {u1["_id"]: 0, u2["_id"]: 0},
-        "shots": 0, "state": "wait_keeper", "bet": bet, 
-        "t_id": t_id, "keeper_pos": None
-    }
-    
-    bot.edit_message_text(f"✅ Ставка {bet} ICE принята! Начинаем матч...", c.message.chat.id, c.message.message_id)
-    g_send_turn(c.message.chat.id, game_id)
+        # Списываем баланс
+        users.update_one({"_id": u1["_id"]}, {"$inc": {"balance": -bet}})
+        users.update_one({"_id": u2["_id"]}, {"$inc": {"balance": -bet}})
+
+        # Создаем игру
+        game_id = f"f_{int(time.time())}"
+        active_games[game_id] = {
+            "p1": u2["_id"], "p2": u1["_id"],
+            "names": {u1["_id"]: u1.get('username', 'Player'), u2["_id"]: u2.get('username', 'Player')},
+            "score": {u1["_id"]: 0, u2["_id"]: 0},
+            "shots": 0, "state": "wait_keeper", "bet": bet, 
+            "t_id": t_id, "keeper_pos": None
+        }
+        
+        bot.edit_message_text(f"✅ Ставка {bet} ICE принята! Начинаем матч...", c.message.chat.id, c.message.message_id)
+        
+        # Теперь это должно сработать!
+        g_send_turn(c.message.chat.id, game_id)
+        
+    except Exception as e:
+        print(f"Ошибка в ставке: {e}")
+        bot.answer_callback_query(c.id, "⚠️ Ошибка при запуске игры.")
     
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_decline_"))
 def g_decline(c):
