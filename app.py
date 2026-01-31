@@ -587,30 +587,6 @@ def battle_call(m):
     bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode="HTML", message_thread_id=m.message_thread_id)
 
 # --- Обработка кнопок ---
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("g_select_"))
-def g_select_game(c):
-    data = c.data.split("_")
-    opp_id = int(data[2])
-    # Вытягиваем thread_id, если он есть
-    t_id = getattr(c.message, 'message_thread_id', None)
-    
-    chall_id = c.from_user.id
-    b_id = f"{chall_id}_{opp_id}"
-    
-    pending_battles[b_id] = {
-        "challenger": chall_id, 
-        "opponent": opp_id, 
-        "thread_id": t_id # ЗАПОМИНАЕМ ТЕМУ
-    }
-    
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("✅ Принять", callback_data=f"g_accept_{b_id}"),
-           types.InlineKeyboardButton("❌ Отказаться", callback_data=f"g_decline_{b_id}"))
-    
-    bot.edit_message_text(f"⚔️ Игрок <b>{c.from_user.first_name}</b> вызывает на баттл <b>Пенальти</b>!", 
-                          c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode="HTML")
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("g_accept_"))
 def g_accept(c):
     b_id = c.data.replace("g_accept_", "")
