@@ -1051,7 +1051,25 @@ def withdraw(m):
         bot.reply_to(m, "❌ Используйте: <code>gold</code> или <code>bot</code>", parse_mode="HTML")
 
 #-----------------------------------------------------Handlers---------------------------
-
+@bot.message_handler(func=lambda m: m.text == "👥 Рефералы")
+def referral_menu(m):
+    uid = m.from_user.id
+    # Ссылка формата https://t.me/имя_твоего_бота?start=ref_ID
+    bot_info = bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{uid}"
+    
+    u = get_user(uid, m.from_user.username, m.from_user.first_name)
+    is_vip = u.get("is_vip", False)
+    bonus = 15 if is_vip else 10
+    
+    text = f"<b>👥 Реферальная программа</b>\n\n" \
+           f"Приглашайте друзей и получайте бонусы за каждого новичка!\n\n" \
+           f"💰 Ваша награда: <b>{bonus} ICE</b> за друга\n" \
+           f"🔗 Ваша ссылка:\n<code>{ref_link}</code>\n\n" \
+           f"<i>Просто отправьте эту ссылку другу. Бонус начислится, когда он нажмет Start.</i>"
+    
+    bot.send_message(m.chat.id, text, parse_mode="HTML")
+    
 # ---------- ERROR & UNKNOWN ----------
 
 @bot.message_handler(func=lambda m: True)
