@@ -122,7 +122,8 @@ def create_main_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add("⛏ Фарм", "⏫ Улучшить")
     kb.add("🏆 Топ", "💸 Отправить")
-    kb.add("👤 Профиль", "🎒 Инвентарь") # Добавляем сразу в kb
+    kb.add("👤 Профиль", "🎒 Инвентарь") 
+    kb.add("👥 Рефералы")
     return kb
 
 # ---------- WEBHOOK ----------
