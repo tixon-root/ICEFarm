@@ -248,28 +248,6 @@ def profile(m):
         logger.error(f"Ошибка профиля: {e}")
         bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.")
 
-#----------------БАТЛИГРЫ------------
-@bot.message_handler(commands=['game'])
-def start_game_cmd(m):
-    # Узнаем ID темы
-    t_id = getattr(m, 'message_thread_id', None)
-    
-    if not m.reply_to_message:
-        return bot.reply_to(m, "❌ <b>Ошибка!</b> Ответьте на сообщение игрока.", 
-                            parse_mode="HTML", message_thread_id=t_id)
-    
-    challenger = m.from_user
-    opponent = m.reply_to_message.from_user
-    
-    # ... (проверки на ID и ботов) ...
-
-    kb = types.InlineKeyboardMarkup()
-    # Добавляем t_id в callback, чтобы бот не "потерял" тему в следующих шагах
-    kb.add(types.InlineKeyboardButton("⚽ Football Penalties", callback_data=f"g_select_{opponent.id}_{t_id}"))
-    
-    bot.send_message(m.chat.id, f"🎮 <b>{challenger.first_name}</b>, выберите игру:", 
-                     reply_markup=kb, parse_mode="HTML", message_thread_id=t_id)
-    
 # ---------- FARM ----------
 
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
