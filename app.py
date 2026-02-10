@@ -66,23 +66,19 @@ ADMIN_ID = 6395348885
 bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
 
-# ---------- DB ----------
-try:
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    client.server_info()  
-    db = client["icecoin"]
-    users = db["users"]
-    battles = db["battles"]
-    settings = db["settings"]
-    
-    yeti_db = client["rucoy"]
-    bank_db = yeti_db["bank"] 
-    
-    users.create_index("username")
-    logger.info("База данных подключена")
-except Exception as e:
-    logger.error(f"Ошибка БД: {e}")
-    raise
+# ---------- DATABASE SETUP ----------
+client = MongoClient(MONGO_URI)
+db = client.rucoy
+users = db.users
+battles = db.battles
+settings = db.settings
+
+bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
+
+# Константы игры
+FARM_CD = 3600  # 1 час в секундах
+GUILD_CHAT_ID = -1002695504348 # Твой ID чата
 
 # ---------- UTILS ----------
 
