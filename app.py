@@ -110,15 +110,10 @@ def upgrade_price(level):
     """Старая дешевая цена: базовая 1 + 0.8 за каждый уровень"""
     return round(1 + level * 0.8, 2)
 
-def fmt(x): 
-    # Если число целое — выводим без дробной части, если есть копейки — с двумя знаками
-    # Заменяем запятые на пробелы для красоты: 10000 -> 10 000
+def fmt(x):
     try:
         val = float(x)
-        if val % 1 == 0:
-            return "{:,.0f}".format(val).replace(",", " ")
-        else:
-            return "{:,.2f}".format(val).replace(",", " ")
+        return "{:,.2f}".format(val).replace(",", " ").replace(".00", "")
     except:
         return str(x)
         
