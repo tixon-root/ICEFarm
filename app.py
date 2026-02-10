@@ -116,9 +116,17 @@ def upgrade_price(level):
     return round(1 + level * 0.8, 2)
 
 def fmt(x): 
-    # Округляем до 2 знаков и разделяем тысячи пробелом
-    return "{:,.2.0f}".format(float(x)).replace(",", " ") if float(x) % 1 == 0 else "{:,.2f}".format(float(x)).replace(",", " "))
-
+    # Если число целое — выводим без дробной части, если есть копейки — с двумя знаками
+    # Заменяем запятые на пробелы для красоты: 10000 -> 10 000
+    try:
+        val = float(x)
+        if val % 1 == 0:
+            return "{:,.0f}".format(val).replace(",", " ")
+        else:
+            return "{:,.2f}".format(val).replace(",", " ")
+    except:
+        return str(x)
+        
 def is_subscribed(m):
     """Проверка подписки на канал"""
     try:
