@@ -182,6 +182,45 @@ def set_webhook():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+def check_achievements(uid):
+    u = users.find_one({"_id": uid})
+    if not u: return
+    
+    current_achs = u.get("achievements", [])
+    # Считаем количество рефералов для проверки
+    ref_count = users.count_documents({"referrer": uid})
+    
+    # Условия проверок
+    checks = {
+        "farm_10": u.get("farm_count", 0) >= 10,
+        "farm_50": u.get("farm_count", 0) >= 50,
+        "wins_10": u.get("wins", 0) >= 10,
+        "wins_50": u.get("wins", 0) >= 50,
+        "ref_1": ref_count >= 1,
+        "ref_10": ref_count >= 10,
+        "rich_1000": u.get("balance", 0) >= 1000,
+        "lvl_10": u.get("level", 1) >= 10
+    }
+
+    new_awards = []
+    for ach_id, condition in checks.items():
+        if condition and ach_id not in current_achs:
+            ach_data = ACHIEVEMENTS.get(ach_id)
+            if ach_data:
+                # Даем награду и записываем ачивку
+                users.update_one({"_id": uid}, {
+                    "$push": {"achievements": ach_id},
+                    "$inc": {"balance": ach_data["reward"]}
+                })
+                new_awards.append(f"🏅 <b>{ach_data['name']}</b> (+{ach_data['reward']} ICE)")
+
+    if new_awards:
+        awards_text = "\n".join(new_awards)
+        try:
+            bot.send_message(uid, f"🎊 <b>Новое достижение!</b>\n\n{awards_text}\n\nПроверьте в /profile", parse_mode="HTML")
+        except: pass
+
 # ---------- START ----------
 @bot.message_handler(commands=["start"])
 def start(m):
@@ -260,22 +299,31 @@ def start(m):
 @bot.message_handler(func=lambda m: m.text in ["👤 Профиль", "/profile"])
 def profile(m):
     try:
-        u = get_user(m.from_user.id, m.from_user.username)
         t_id = getattr(m, 'message_thread_id', None)
+        # 1. Сначала получаем юзера из базы
+        u = get_user(m.from_user.id, m.from_user.username)
         
-        # Расчет времени фарма
+        # 2. Теперь собираем иконки достижений
+        my_achs = u.get("achievements", [])
+        mythic = u.get("mythic_achs", [])
+        # Берем только первый символ (эмодзи) из названия ачивки
+        icons = [ACHIEVEMENTS[a]["name"].split()[0] for a in my_achs if a in ACHIEVEMENTS]
+        m_icons = [ma["name"].split()[0] for ma in mythic]
+        achs_line = " ".join(icons + m_icons) if (icons or m_icons) else "Нет"
+        
+        # 3. Расчет времени фарма
         now = int(time.time())
         next_farm = u.get("farm", 0) + FARM_CD - now
         farm_status = "✅ Доступен" if next_farm <= 0 else f"⏳ {next_farm // 60} мин"
 
-        # Настройка VIP элементов
+        # 4. Настройка VIP элементов
         is_vip = u.get("is_vip", False)
         status_emoji = u.get("vip_emoji", "👤") if is_vip else "👤"
         
         # Формируем текст по твоему шаблону
         # Используем <code> для выравнивания чисел
         txt = (
-            f"╔═ 👤 <b>ПРОФИЛЬ ИГРОКА</b> ═╗\n"
+            f"╔═ {achs_line}\n"> ═╗\n"
             f"┃ {status_emoji} <b>Юзер:</b> @{u['username']}\n"
             f"┣━━━━━━━━━━━━━━━━━━\n"
             f"┃ 💰 <b>Баланс:</b>    <code>{fmt(u['balance'])} ICE</code>\n"
@@ -288,7 +336,7 @@ def profile(m):
             f"╚══════════════════╝"
         )
 
-        bg = u.get("vip_background")
+       bg = u.get("vip_background")
         if is_vip and bg:
             if u.get("vip_type") == "photo":
                 bot.send_photo(m.chat.id, bg, caption=txt, parse_mode="HTML", message_thread_id=t_id)
