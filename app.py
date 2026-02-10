@@ -66,15 +66,27 @@ ADMIN_ID = 6395348885
 bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
 
-# ---------- DATABASE SETUP ----------
-client = MongoClient(MONGO_URI)
-db = client.rucoy  # ПРОВЕРЬ: если раньше база называлась icecoin_db, замени rucoy на него!
-
-users = db.users
-battles = db.battles
-settings = db.settings
-# Добавляем подключение к банку (если он в той же базе)
-bank_db = db.bank
+# ---------- DB ----------
+try:
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    client.server_info()  
+    
+    # Твоя ОСНОВНАЯ база (где игроки и балансы)
+    db = client["icecoin"] 
+    users = db["users"]
+    battles = db["battles"]
+    settings = db["settings"]
+    
+    # База для вывода в Rucoy Bank (другая база на том же кластере)
+    yeti_db = client["rucoy"]
+    bank_db = yeti_db["bank"] 
+    
+    users.create_index("username")
+    logger.info("✅ Успешное подключение! Основная база: icecoin, Банк: rucoy")
+except Exception as e:
+    logger.error(f"❌ Ошибка подключения к MongoDB: {e}")
+    raise
+    
 # ---------- UTILS ----------
 
 def get_user(uid, username, first_name=None):
