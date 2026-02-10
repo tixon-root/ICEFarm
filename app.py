@@ -524,7 +524,31 @@ def transfer_nft_start(c):
     # Говорим боту: "Следующее сообщение от этого юзера отправь в функцию process_nft_transfer"
     bot.register_next_step_handler(msg, process_nft_transfer, index)
     bot.answer_callback_query(c.id)
-    
+
+# ---------- ДОСТИЖЕНИЯ (МИТИКИ) ----------
+
+@bot.message_handler(func=lambda m: m.text == "🏆 Достижения" or m.text == "/achs")
+def show_achievements(m):
+    try:
+        t_id = getattr(m, 'message_thread_id', None)
+        u = get_user(m.from_user.id, m.from_user.username)
+        
+        # Получаем список мифических достижений из базы
+        # Если поля mythic_achs нет, создаем пустой список
+        achs = u.get("mythic_achs", [])
+        
+        if not achs:
+            text = "<b>🏆 Ваши достижения</b>\n\n<i>У вас пока нет особых наград. Участвуйте в ивентах и будьте активны!</i>"
+        else:
+            text = "<b>🏆 Ваши мифические достижения:</b>\n\n"
+            for a in achs:
+                text += f"• {a['name']}\n"
+        
+        bot.send_message(m.chat.id, text, parse_mode="HTML", message_thread_id=t_id)
+    except Exception as e:
+        logger.error(f"Ошибка достижений: {e}")
+        bot.send_message(m.chat.id, "❌ Ошибка при загрузке достижений.")
+        
 #-------------SEND----------
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
 def send(m):
