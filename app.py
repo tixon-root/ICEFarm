@@ -330,17 +330,18 @@ def profile(m):
         
         # Формируем текст по твоему шаблону
         # Используем <code> для выравнивания чисел
-        txt = (
-            f"╔═ {achs_line}\n"> ═╗\n"
-            f"┃ {status_emoji} <b>Юзер:</b> @{u['username']}\n"
+      txt = (
+            f"╔═ {status_emoji} <b>ПРОФИЛЬ ИГРОКА</b> ═╗\n"
+            f"┃ <b>Юзер:</b> @{u['username']}\n"
             f"┣━━━━━━━━━━━━━━━━━━\n"
             f"┃ 💰 <b>Баланс:</b>    <code>{fmt(u['balance'])} ICE</code>\n"
             f"┃ ⛏ <b>Уровень:</b>    <code>{u['level']}</code>\n"
-            f"┃ 📈 <b>Доход/цикл:</b> <code>{farm_amount(u['level'])} ICE</code>\n"
-            f"┃ ⏫ <b>Апгрейд:</b>    <code>{upgrade_price(u['level'])} ICE</code>\n"
-            f"┃ 🏆 <b>Победы:</b>     <code>{u.get('wins', 0)}</code>\n"
+            f"┃ 📈 <b>Доход:</b>     <code>{farm_amount(u['level'])} ICE</code>\n"
+            f"┃ ⏫ <b>Апгрейд:</b>   <code>{upgrade_price(u['level'])} ICE</code>\n"
+            f"┃ 🏆 <b>Победы:</b>    <code>{u.get('wins', 0)}</code>\n"
+            f"┃ 🏅 <b>Награды:</b>   {achs_line}\n"
             f"┣━━━━━━━━━━━━━━━━━━\n"
-            f"┃ ⛏ <b>Майнинг:</b>    {farm_status}\n"
+            f"┃ ⛏ <b>Майнинг:</b>   {farm_status}\n"
             f"╚══════════════════╝"
         )
 
