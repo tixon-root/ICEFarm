@@ -68,18 +68,13 @@ app = Flask(__name__)
 
 # ---------- DATABASE SETUP ----------
 client = MongoClient(MONGO_URI)
-db = client.rucoy
+db = client.rucoy  # ПРОВЕРЬ: если раньше база называлась icecoin_db, замени rucoy на него!
+
 users = db.users
 battles = db.battles
 settings = db.settings
-
-bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
-
-# Константы игры
-FARM_CD = 3600  # 1 час в секундах
-GUILD_CHAT_ID = -1002695504348 # Твой ID чата
-
+# Добавляем подключение к банку (если он в той же базе)
+bank_db = db.bank
 # ---------- UTILS ----------
 
 def get_user(uid, username, first_name=None):
