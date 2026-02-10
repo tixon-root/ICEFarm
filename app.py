@@ -328,9 +328,8 @@ def profile(m):
         is_vip = u.get("is_vip", False)
         status_emoji = u.get("vip_emoji", "👤") if is_vip else "👤"
         
-        # Формируем текст по твоему шаблону
-        # Используем <code> для выравнивания чисел
-      txt = (
+        # Формируем текст
+        txt = (
             f"╔═ {status_emoji} <b>ПРОФИЛЬ ИГРОКА</b> ═╗\n"
             f"┃ <b>Юзер:</b> @{u['username']}\n"
             f"┣━━━━━━━━━━━━━━━━━━\n"
@@ -345,7 +344,8 @@ def profile(m):
             f"╚══════════════════╝"
         )
 
-       bg = u.get("vip_background")
+        # 5. Отправка (VIP с фоном или обычный текст)
+        bg = u.get("vip_background")
         if is_vip and bg:
             if u.get("vip_type") == "photo":
                 bot.send_photo(m.chat.id, bg, caption=txt, parse_mode="HTML", message_thread_id=t_id)
