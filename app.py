@@ -108,19 +108,16 @@ def get_user(uid, username, first_name=None):
         return None
 
 def farm_amount(level):
-    """Доход: до 15 лвла +0.4, после 15 лвла +0.1"""
-    if level <= 15:
-        return round(0.4 * level, 2)
-    else:
-        # База за 15 лвл (6.0) + по 0.1 за каждый уровень выше
-        return round(6.0 + (level - 15) * 0.1, 2)
+    """Базовая формула фарма: уровень * 0.5 + рандом от 0.1 до 1.0"""
+    return round((level * 0.5) + random.uniform(0.1, 1.0), 1)
 
 def upgrade_price(level):
     """Старая дешевая цена: базовая 1 + 0.8 за каждый уровень"""
     return round(1 + level * 0.8, 2)
 
 def fmt(x): 
-    return round(float(x), 2)
+    # Округляем до 2 знаков и разделяем тысячи пробелом
+    return "{:,.2.0f}".format(float(x)).replace(",", " ") if float(x) % 1 == 0 else "{:,.2f}".format(float(x)).replace(",", " "))
 
 def is_subscribed(m):
     """Проверка подписки на канал"""
@@ -144,6 +141,7 @@ def is_subscribed(m):
 def create_main_keyboard():
     """Главное меню"""
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add("🏅 Достижения")
     kb.add("⛏ Фарм", "⏫ Улучшить")
     kb.add("🏆 Топ", "💸 Отправить")
     kb.add("👤 Профиль", "🎒 Инвентарь") 
@@ -908,6 +906,25 @@ def admin_give(m):
         logger.error(f"Ошибка give: {e}")
         bot.send_message(m.chat.id, "❌ Ошибка при выполнении команды", message_thread_id=m.message_thread_id)
 
+@bot.message_handler(commands=["give_mythic"])
+def give_mythic(m):
+    if m.from_user.id != ADMIN_ID: return 
+    
+    try:
+        # Формат: /give_mythic ID Название
+        parts = m.text.split(maxsplit=2)
+        target_id = int(parts[1])
+        mythic_name = parts[2]
+        
+        users.update_one(
+            {"_id": target_id},
+            {"$push": {"mythic_achs": {"name": f"✨ {mythic_name}"}}}
+        )
+        
+        bot.send_message(m.chat.id, f"✅ Игроку <code>{target_id}</code> выдана ачивка: {mythic_name}", parse_mode="HTML")
+        bot.send_message(target_id, f"💎 <b>Особая награда!</b>\nАдминистратор выдал вам мифическое достижение: <b>{mythic_name}</b>", parse_mode="HTML")
+    except Exception as e:
+        bot.reply_to(m, "❌ Ошибка! Используй: <code>/give_mythic ID Название</code>", parse_mode="HTML")
 # Важно: ставим обработчик фото ПЕРЕД общим обработчиком текста
 # --- Начало цепочки ---
 @bot.message_handler(commands=['give_nft'])
