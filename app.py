@@ -24,34 +24,6 @@ TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 WEBHOOK = os.getenv("WEBHOOK")
 ADMIN = os.getenv("ADMIN_USERNAME")
-ACHIEVEMENTS = {
-    # ФАРМ (Количество действий)
-    "farm_10": {"name": "🌱 Росток", "desc": "10 сеансов фарма", "reward": 10},
-    "farm_50": {"name": "🌿 Садовод", "desc": "50 сеансов фарма", "reward": 50},
-    "farm_200": {"name": "⚒ Шахтер", "desc": "200 сеансов фарма", "reward": 250},
-    "farm_1000": {"name": "💎 Алмазная рука", "desc": "1000 сеансов фарма", "reward": 1500},
-    "farm_3000": {"name": "🌌 Повелитель льда", "desc": "3000 сеансов фарма", "reward": 5000},
-
-    # БАТТЛЫ (Победы)
-    "wins_10": {"name": "⚔️ Дуэлянт", "desc": "10 побед в кубах", "reward": 50},
-    "wins_50": {"name": "🛡 Гладиатор", "desc": "50 побед в кубах", "reward": 500},
-    "wins_100": {"name": "🌋 Непобедимый", "desc": "100 побед в кубах", "reward": 2000},
-
-    # РЕФЕРАЛЫ (Социальные)
-    "ref_1": {"name": "🤝 Друг", "desc": "Пригласил 1 игрока", "reward": 25},
-    "ref_10": {"name": "📢 Лидер", "desc": "Пригласил 10 игроков", "reward": 300},
-    "ref_50": {"name": "👑 Магнат трафика", "desc": "Пригласил 50 игроков", "reward": 2000},
-
-    # БОГАТСТВО (Баланс)
-    "rich_1000": {"name": "💵 Зажиточный", "desc": "Собрал 1000 ICE", "reward": 100},
-    "rich_10000": {"name": "💰 Миллионер", "desc": "Собрал 10 000 ICE", "reward": 1500},
-    "rich_100000": {"name": "🏛 Форбс", "desc": "Собрал 100 000 ICE", "reward": 10000},
-
-    # УРОВЕНЬ (Прокачка)
-    "lvl_10": {"name": "📈 Растущий", "desc": "Достиг 10 уровня", "reward": 100},
-    "lvl_50": {"name": "🔥 Мастер", "desc": "Достиг 50 уровня", "reward": 1500},
-    "lvl_100": {"name": "⚡️ Бог фарма", "desc": "Достиг 100 уровня", "reward": 10000}
-}
 
 # ---------- CONSTANTS (ВАЖНО!) ----------
 FARM_CD = 10800          # 3 часа
@@ -69,22 +41,25 @@ app = Flask(__name__)
 # ---------- DB ----------
 try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    client.server_info()  
+    client.server_info()
     
-    # Твоя ОСНОВНАЯ база (где игроки и балансы)
-    db = client["icecoin"] 
+    # Основная база бота
+    db = client["icecoin"]
     users = db["users"]
     battles = db["battles"]
     settings = db["settings"]
-    
-    # База для вывода в Rucoy Bank (другая база на том же кластере)
+
+    # База банка (Yeti)
     yeti_db = client["rucoy"]
-    bank_db = yeti_db["bank"] 
-    
+    bank_db = yeti_db["bank"]
+
+    # Индексы для быстрого поиска
     users.create_index("username")
-    logger.info("✅ Успешное подключение! Основная база: icecoin, Банк: rucoy")
+    users.create_index("balance") # Добавь это для работы ТОПа без лагов
+    
+    logger.info("База данных подключена успешно")
 except Exception as e:
-    logger.error(f"❌ Ошибка подключения к MongoDB: {e}")
+    logger.error(f"Ошибка БД: {e}")
     raise
     
 # ---------- UTILS ----------
