@@ -576,61 +576,82 @@ def send(m):
         bot.reply_to(m, "❌ Произошла ошибка при выполнении перевода.")
         
 # ---------- TOP ----------
-# ---------- ТОП ИГРОКОВ ----------
+# ---------- TOP ----------
 
-@bot.message_handler(commands=["top"])
-def show_top(m):
+@bot.message_handler(func=lambda m: m.text in ["🏆 Топ", "/top"])
+def top_menu(m):
+    """Меню выбора типа топа с кнопками в ряд и одной снизу"""
     if not is_subscribed(m): return
-    try:
-        # Определяем поле для сортировки (по умолчанию баланс)
-        sort_field = "balance"
-        
-        # Получаем топ-10 пользователей
-        # Мы используем limit(10) и сортировку по убыванию (-1)
-        top_users = list(users.find().sort(sort_field, -1).limit(10))
-        
-        if not top_users:
-            bot.reply_to(m, "🏆 Список лидеров пока пуст.")
-            return
+    
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    # Кнопки в ряд
+    b1 = types.InlineKeyboardButton("💰 По балансу", callback_data="top_balance")
+    b2 = types.InlineKeyboardButton("🎖 По уровню", callback_data="top_level")
+    # Кнопка на отдельной строке снизу
+    b3 = types.InlineKeyboardButton("⚔️ По победам", callback_data="top_wins")
+    
+    kb.add(b1, b2) # Первый ряд
+    kb.add(b3)     # Второй ряд
+    
+    bot.send_message(
+        m.chat.id, 
+        "<b>Выберите таблицу лидеров:</b>", 
+        parse_mode="HTML", 
+        reply_markup=kb,
+        message_thread_id=getattr(m, 'message_thread_id', None)
+    )
 
-        text = "🏆 <b>ТОП-10 МАГНАТОВ ICE</b>\n\n"
+@bot.callback_query_handler(func=lambda c: c.data.startswith("top_"))
+def top_callback(c):
+    """Обработка выбора топа с отображением Имени"""
+    try:
+        data = c.data
+        if data == "top_balance":
+            sort_field = "balance"
+            title = "🏆 <b>ТОП-10 БОГАТЕЕВ (ICE)</b>"
+            unit = "ICE"
+        elif data == "top_level":
+            sort_field = "level"
+            title = "🎖 <b>ТОП-10 МАСТЕРОВ ФАРМА</b>"
+            unit = "LVL"
+        else:
+            sort_field = "wins"
+            title = "⚔️ <b>ТОП-10 ГЛАДИАТОРОВ</b>"
+            unit = "побед"
+
+        # Достаем лучших из базы
+        top_users = users.find().sort(sort_field, -1).limit(10)
+        
+        text = f"{title}\n\n"
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         
         for i, user in enumerate(top_users, 1):
-            # Определяем иконку для первых трех мест
-            if i == 1: medal = "🥇"
-            elif i == 2: medal = "🥈"
-            elif i == 3: medal = "🥉"
-            else: medal = f"{i}."
-
-            # Безопасно получаем имя и баланс
-            name = user.get("first_name") or user.get("username") or "Аноним"
-            # Принудительно конвертируем в float на случай, если в БД строка
-            try:
-                bal = float(str(user.get("balance", 0)).replace(" ", ""))
-            except:
-                bal = 0.0
-                
-            text += f"{medal} <b>{name}</b> — <code>{fmt(bal)}</code> ICE\n"
-
-        # Добавляем инфо о позиции самого игрока внизу
-        u_id = m.from_user.id
-        all_sorted = list(users.find().sort(sort_field, -1))
-        user_rank = "???"
+            # ТУТ ИСПРАВЛЕНИЕ: сначала ищем ИМЯ (first_name), если нет - юзернейм
+            name = user.get("first_name") or user.get("username") or f"Игрок {user['_id']}"
+            
+            # Очистка имени от лишних символов, чтобы не ломать HTML
+            name = str(name).replace("<", "").replace(">", "").replace("@", "")
+            
+            val = user.get(sort_field, 0)
+            prefix = medals.get(i, f"{i}.")
+            
+            # Форматируем значение (для баланса - дробное, для лвла и побед - целое)
+            val_fmt = fmt(val) if sort_field == "balance" else int(val)
+            
+            text += f"{prefix} <b>{name}</b> — {val_fmt} {unit}\n"
         
-        for rank, u in enumerate(all_sorted, 1):
-            if u["_id"] == u_id:
-                user_rank = rank
-                break
-        
-        text += f"\n— — — — — — — —\n👤 Ваше место: <b>{user_rank}</b> из <b>{len(all_sorted)}</b>"
-        
-        bot.send_message(m.chat.id, text, parse_mode="HTML")
+        bot.edit_message_text(
+            text, 
+            c.message.chat.id, 
+            c.message.message_id, 
+            parse_mode="HTML"
+        )
+        bot.answer_callback_query(c.id)
         
     except Exception as e:
-        logger.error(f"Ошибка в команде top: {e}")
-        bot.reply_to(m, "❌ Не удалось загрузить таблицу лидеров.")
-
-# ---------------------------------
+        logger.error(f"Ошибка топа: {e}")
+        bot.answer_callback_query(c.id, "❌ Ошибка загрузки данных")
+        
 # ---------- BATTLE ----------
 @bot.message_handler(commands=["batle"])
 def battle_call(m):
