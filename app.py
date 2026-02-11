@@ -241,6 +241,27 @@ def start(m):
         logger.error(f"Ошибка start: {e}")
         bot.send_message(m.chat.id, "❌ Произошла ошибка")
 
+@bot.message_handler(commands=["fix_db"])
+def fix_database(m):
+    if m.from_user.id != 6395348885: return # Только для тебя
+    
+    count = 0
+    for user in users.find():
+        try:
+            # Превращаем "122.40" (строку) в 122.4 (число)
+            old_balance = user.get("balance", 0)
+            new_balance = float(str(old_balance).replace(",", "."))
+            
+            users.update_one(
+                {"_id": user["_id"]},
+                {"$set": {"balance": new_balance}}
+            )
+            count += 1
+        except:
+            continue
+    
+    bot.reply_to(m, f"✅ База исправлена! Перенастроено {count} профилей. Теперь ТОП будет работать верно.")
+    
 # ---------- PROFILE ----------
 @bot.message_handler(func=lambda m: m.text in ["👤 Профиль", "/profile"])
 def profile(m):
