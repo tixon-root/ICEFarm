@@ -672,7 +672,7 @@ def top_callback(c):
             unit = "побед"
 
         # Достаем лучших из базы
-        top_users = users.find().sort(sort_field, -1).limit(10)
+       top_users = users.find().sort(sort_field, -1).limit(10)
         
         text = f"{title}\n\n"
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
