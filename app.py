@@ -361,34 +361,47 @@ def profile(m):
         bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.")
 
 # ---------- FARM ----------
-
-@bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
+@@bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
 def farm(m):
     if not is_subscribed(m): return 
     try:
-        # Получаем юзера
         u = get_user(m.from_user.id, m.from_user.username)
-        if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
-            return
-
         now = int(time.time())
         
-        # Безопасное получение времени последнего фарма
         last_farm_time = u.get("farm", 0) 
         time_passed = now - last_farm_time
 
         if time_passed < FARM_CD:
             wait = FARM_CD - time_passed
-            hours = wait // 3600
-            minutes = (wait % 3600) // 60
-            bot.send_message(
-                m.chat.id, 
-                f"⏳ Следующий фарм через: <b>{hours}ч {minutes}м</b>",
-                parse_mode="HTML",
-                message_thread_id=m.message_thread_id
-            )
+            bot.send_message(m.chat.id, f"⏳ Следующий фарм через: <b>{wait // 3600}ч {(wait % 3600) // 60}м</b>", 
+                             parse_mode="HTML", message_thread_id=getattr(m, 'message_thread_id', None))
             return
+
+        gain = farm_amount(u["level"])
+        if u.get("is_vip", False):
+            gain += 0.5
+            vip_text = "✨ (VIP +0.5)"
+        else:
+            vip_text = ""
+
+        # Безопасное сложение
+        current_balance = float(u.get("balance", 0))
+        final_balance = round(current_balance + gain, 2)
+
+        # Сохраняем в базу ЧИСЛО, а не текст
+        users.update_one(
+            {"_id": u["_id"]},
+            {"$set": {"farm": now, "balance": final_balance}, "$inc": {"farm_count": 1}}
+        )
+        
+        bot.send_message(m.chat.id, f"❄️ Вы добыли <b>{gain} ICE</b> {vip_text}\n💰 Баланс: <b>{fmt(final_balance)} ICE</b>",
+                         parse_mode="HTML", message_thread_id=getattr(m, 'message_thread_id', None))
+        
+        check_achievements(u["_id"])
+        
+    except Exception as e:
+        logger.error(f"Ошибка farm: {e}")
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=getattr(m, 'message_thread_id', None))
 
         # --- ЛОГИКА БОНУСА ---
         # Базовая сумма фарма из уровня
@@ -424,29 +437,27 @@ def farm(m):
         bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
         
 # ---------- UPGRADE ----------
-
 @bot.message_handler(func=lambda m: m.text == "⏫ Улучшить" or m.text == "/upgrade")
 def upgrade(m):
-    """Улучшение уровня фарма"""
     try:
         u = get_user(m.from_user.id, m.from_user.username)
-        if not u:
-            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
-            return
-
+        if not u: return
+        
         price = upgrade_price(u["level"])
+        # Принудительно превращаем баланс в число для расчета
+        current_balance = float(u.get("balance", 0))
 
-        if u["balance"] < price:
+        if current_balance < price:
             bot.send_message(
                 m.chat.id, 
-                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(u['balance'])} ICE</b>",
-                parse_mode="HTML",
-                message_thread_id=m.message_thread_id # Добавлено
+                f"❌ Недостаточно средств!\nНужно: <b>{price} ICE</b>\nУ вас: <b>{fmt(current_balance)} ICE</b>", 
+                parse_mode="HTML", message_thread_id=getattr(m, 'message_thread_id', None)
             )
             return
 
         new_level = u["level"] + 1
-        new_balance = fmt(u["balance"] - price)
+        # ВАЖНО: сохраняем число (float), а не строку из fmt()
+        new_balance = round(current_balance - price, 2)
         new_farm_amount = farm_amount(new_level)
 
         users.update_one({"_id": u["_id"]}, {"$set": {"balance": new_balance, "level": new_level}})
@@ -456,14 +467,13 @@ def upgrade(m):
             f"✅ <b>Уровень фарма повышен!</b>\n\n"
             f"⛏ Новый уровень: <b>{new_level}</b>\n"
             f"📈 Добыча за фарм: <b>{new_farm_amount} ICE</b>\n"
-            f"💰 Остаток: <b>{new_balance} ICE</b>",
-            parse_mode="HTML",
-            message_thread_id=m.message_thread_id # Добавлено
+            f"💰 Остаток: <b>{fmt(new_balance)} ICE</b>",
+            parse_mode="HTML", message_thread_id=getattr(m, 'message_thread_id', None)
         )
     except Exception as e:
         logger.error(f"Ошибка upgrade: {e}")
-        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
-
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=getattr(m, 'message_thread_id', None))
+        
 # --- Кнопка инвентаря (поддерживает текст и команду) ---
 @bot.message_handler(func=lambda m: m.text in ["🎒 Инвентарь", "/inv"])
 def show_inventory(m):
