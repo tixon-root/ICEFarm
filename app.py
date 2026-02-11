@@ -192,45 +192,6 @@ def set_webhook():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-def check_achievements(uid):
-    u = users.find_one({"_id": uid})
-    if not u: return
-    
-    current_achs = u.get("achievements", [])
-    # Считаем количество рефералов для проверки
-    ref_count = users.count_documents({"referrer": uid})
-    
-    # Условия проверок
-    checks = {
-        "farm_10": u.get("farm_count", 0) >= 10,
-        "farm_50": u.get("farm_count", 0) >= 50,
-        "wins_10": u.get("wins", 0) >= 10,
-        "wins_50": u.get("wins", 0) >= 50,
-        "ref_1": ref_count >= 1,
-        "ref_10": ref_count >= 10,
-        "rich_1000": u.get("balance", 0) >= 1000,
-        "lvl_10": u.get("level", 1) >= 10
-    }
-
-    new_awards = []
-    for ach_id, condition in checks.items():
-        if condition and ach_id not in current_achs:
-            ach_data = ACHIEVEMENTS.get(ach_id)
-            if ach_data:
-                # Даем награду и записываем ачивку
-                users.update_one({"_id": uid}, {
-                    "$push": {"achievements": ach_id},
-                    "$inc": {"balance": ach_data["reward"]}
-                })
-                new_awards.append(f"🏅 <b>{ach_data['name']}</b> (+{ach_data['reward']} ICE)")
-
-    if new_awards:
-        awards_text = "\n".join(new_awards)
-        try:
-            bot.send_message(uid, f"🎊 <b>Новое достижение!</b>\n\n{awards_text}\n\nПроверьте в /profile", parse_mode="HTML")
-        except: pass
-
 # ---------- START ----------
 @bot.message_handler(commands=["start"])
 def start(m):
