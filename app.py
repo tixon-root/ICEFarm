@@ -276,7 +276,6 @@ def profile(m):
             f"┃ 📈 <b>Доход:</b>     <code>{farm_amount(u['level'])} ICE</code>\n"
             f"┃ ⏫ <b>Апгрейд:</b>   <code>{upgrade_price(u['level'])} ICE</code>\n"
             f"┃ 🏆 <b>Победы:</b>    <code>{u.get('wins', 0)}</code>\n"
-            f"┃ 🏅 <b>Награды:</b>   {achs_line}\n"
             f"┣━━━━━━━━━━━━━━━━━━\n"
             f"┃ ⛏ <b>Майнинг:</b>   {farm_status}\n"
             f"╚══════════════════╝"
@@ -298,35 +297,82 @@ def profile(m):
 
 # ---------- FARM ----------
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
+
 def farm(m):
+
     if not is_subscribed(m): return 
+
     try:
+
+        # Получаем юзера
+
         u = get_user(m.from_user.id, m.from_user.username)
+
+        if not u:
+
+            bot.send_message(m.chat.id, "❌ Ошибка получения данных", message_thread_id=m.message_thread_id)
+
+            return
+
+
         now = int(time.time())
+
+        
+        # Безопасное получение времени последнего фарма
+
         last_farm_time = u.get("farm", 0) 
+
         time_passed = now - last_farm_time
+
+
 
         if time_passed < FARM_CD:
             wait = FARM_CD - time_passed
-            bot.send_message(m.chat.id, f"⏳ Следующий фарм через: <b>{wait // 3600}ч {(wait % 3600) // 60}м</b>", parse_mode="HTML")
+            hours = wait // 3600
+            minutes = (wait % 3600) // 60
+            bot.send_message(
+                m.chat.id, 
+                f"⏳ Следующий фарм через: <b>{hours}ч {minutes}м</b>",
+                parse_mode="HTML",
+                message_thread_id=m.message_thread_id
+            )
             return
 
+        # --- ЛОГИКА БОНУСА ---
+        # Базовая сумма фарма из уровня
         gain = farm_amount(u["level"])
-        if u.get("is_vip", False): gain += 0.5
         
-        current_balance = float(u.get("balance", 0))
-        final_balance = round(current_balance + gain, 2)
+        # Проверяем VIP статус (поле is_vip или другой признак)
+        if u.get("is_vip", False):
+            gain += 0.5  # Добавляем бонус +0.5 для VIP
+            vip_text = "✨ (VIP Бонус +0.5)"
+        else:
+            vip_text = ""
+        # Считем новый баланс (числом)
+        current_balance = u.get("balance", 0.0)
+        final_balance = current_balance + gain
 
+
+        # Сохраняем в базу
         users.update_one(
             {"_id": u["_id"]},
             {"$set": {"farm": now, "balance": final_balance}}
         )
+
         
-        bot.send_message(m.chat.id, f"❄️ Вы добыли <b>{gain} ICE</b>\n💰 Баланс: <b>{fmt(final_balance)} ICE</b>", parse_mode="HTML")
+        # Вывод сообщения пользователю
+        bot.send_message(
+            m.chat.id, 
+            f"❄️ Вы добыли <b>{gain} ICE</b> {vip_text}\n💰 Баланс: <b>{fmt(final_balance)} ICE</b>",
+            parse_mode="HTML",
+            message_thread_id=m.message_thread_id
+        )
+
         
     except Exception as e:
         logger.error(f"Ошибка farm: {e}")
-
+        bot.send_message(m.chat.id, "❌ Произошла ошибка", message_thread_id=m.message_thread_id)
+        
 # ---------- UPGRADE ----------
 @bot.message_handler(func=lambda m: m.text == "⏫ Улучшить" or m.text == "/upgrade")
 def upgrade(m):
