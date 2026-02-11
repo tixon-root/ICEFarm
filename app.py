@@ -361,7 +361,7 @@ def profile(m):
         bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.")
 
 # ---------- FARM ----------
-@@bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
+@bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
 def farm(m):
     if not is_subscribed(m): return 
     try:
