@@ -943,26 +943,6 @@ def admin_give(m):
         logger.error(f"Ошибка give: {e}")
         bot.send_message(m.chat.id, "❌ Ошибка при выполнении команды", message_thread_id=m.message_thread_id)
 
-@bot.message_handler(commands=["give_mythic"])
-def give_mythic(m):
-    if m.from_user.id != ADMIN_ID: return 
-    
-    try:
-        # Формат: /give_mythic ID Название
-        parts = m.text.split(maxsplit=2)
-        target_id = int(parts[1])
-        mythic_name = parts[2]
-        
-        users.update_one(
-            {"_id": target_id},
-            {"$push": {"mythic_achs": {"name": f"✨ {mythic_name}"}}}
-        )
-        
-        bot.send_message(m.chat.id, f"✅ Игроку <code>{target_id}</code> выдана ачивка: {mythic_name}", parse_mode="HTML")
-        bot.send_message(target_id, f"💎 <b>Особая награда!</b>\nАдминистратор выдал вам мифическое достижение: <b>{mythic_name}</b>", parse_mode="HTML")
-    except Exception as e:
-        bot.reply_to(m, "❌ Ошибка! Используй: <code>/give_mythic ID Название</code>", parse_mode="HTML")
-# Важно: ставим обработчик фото ПЕРЕД общим обработчиком текста
 # --- Начало цепочки ---
 @bot.message_handler(commands=['give_nft'])
 def start_nft_creation(m):
