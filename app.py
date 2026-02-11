@@ -526,28 +526,31 @@ def transfer_nft_start(c):
     bot.answer_callback_query(c.id)
 
 # ---------- ДОСТИЖЕНИЯ (МИТИКИ) ----------
-
-@bot.message_handler(func=lambda m: m.text == "🏆 Достижения" or m.text == "/achs")
+@bot.message_handler(func=lambda m: m.text in ["🏅 Достижения", "🏆 Достижения", "/achs"])
 def show_achievements(m):
     try:
         t_id = getattr(m, 'message_thread_id', None)
         u = get_user(m.from_user.id, m.from_user.username)
         
-        # Получаем список мифических достижений из базы
-        # Если поля mythic_achs нет, создаем пустой список
-        achs = u.get("mythic_achs", [])
+        # Получаем и обычные, и мифические ачивки
+        user_achs = u.get("achievements", [])
+        mythic = u.get("mythic_achs", [])
         
-        if not achs:
-            text = "<b>🏆 Ваши достижения</b>\n\n<i>У вас пока нет особых наград. Участвуйте в ивентах и будьте активны!</i>"
+        if not user_achs and not mythic:
+            text = "<b>🏆 Ваши достижения</b>\n\n<i>У вас пока нет наград. Будьте активнее!</i>"
         else:
-            text = "<b>🏆 Ваши мифические достижения:</b>\n\n"
-            for a in achs:
-                text += f"• {a['name']}\n"
+            text = "<b>🏆 ВАШИ НАГРАДЫ:</b>\n\n"
+            # Обычные
+            for aid in user_achs:
+                if aid in ACHIEVEMENTS:
+                    text += f"• {ACHIEVEMENTS[aid]['name']}\n"
+            # Мифические
+            for ma in mythic:
+                text += f"• {ma['name']}\n"
         
         bot.send_message(m.chat.id, text, parse_mode="HTML", message_thread_id=t_id)
     except Exception as e:
         logger.error(f"Ошибка достижений: {e}")
-        bot.send_message(m.chat.id, "❌ Ошибка при загрузке достижений.")
         
 #-------------SEND----------
 @bot.message_handler(func=lambda m: m.text == "💸 Отправить" or (m.text and m.text.startswith("/send")))
