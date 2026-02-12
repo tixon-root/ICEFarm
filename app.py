@@ -266,16 +266,22 @@ def fix_database(m):
 @bot.message_handler(func=lambda m: m.text in ["👤 Профиль", "/profile"])
 def profile(m):
     try:
+        # Получаем ID темы, чтобы бот ответил в тот же топик
         t_id = getattr(m, 'message_thread_id', None)
+        
         # 1. Сначала получаем юзера из базы
         u = get_user(m.from_user.id, m.from_user.username)
         
-        # 2. Теперь собираем иконки достижений
+        # 2. Теперь собираем иконки достижений (если они еще остались в базе)
         my_achs = u.get("achievements", [])
         mythic = u.get("mythic_achs", [])
-        # Берем только первый символ (эмодзи) из названия ачивки
-        icons = [ACHIEVEMENTS[a]["name"].split()[0] for a in my_achs if a in ACHIEVEMENTS]
-        m_icons = [ma["name"].split()[0] for ma in mythic]
+        
+        # Безопасный сбор иконок (проверка наличия словаря ACHIEVEMENTS)
+        icons = []
+        if 'ACHIEVEMENTS' in globals():
+            icons = [ACHIEVEMENTS[a]["name"].split()[0] for a in my_achs if a in ACHIEVEMENTS]
+        
+        m_icons = [ma["name"].split()[0] for ma in mythic if isinstance(ma, dict) and "name" in ma]
         achs_line = " ".join(icons + m_icons) if (icons or m_icons) else "Нет"
         
         # 3. Расчет времени фарма
@@ -294,15 +300,15 @@ def profile(m):
             f"┣━━━━━━━━━━━━━━━━━━\n"
             f"┃ 💰 <b>Баланс:</b>    <code>{fmt(u['balance'])} ICE</code>\n"
             f"┃ ⛏ <b>Уровень:</b>    <code>{u['level']}</code>\n"
-            f"┃ 📈 <b>Доход:</b>     <code>{farm_amount(u['level'])} ICE</code>\n"
-            f"┃ ⏫ <b>Апгрейд:</b>   <code>{upgrade_price(u['level'])} ICE</code>\n"
+            f"┃ 📈 <b>Доход:</b>      <code>{farm_amount(u['level'])} ICE</code>\n"
+            f"┃ ⏫ <b>Апгрейд:</b>    <code>{upgrade_price(u['level'])} ICE</code>\n"
             f"┃ 🏆 <b>Победы:</b>    <code>{u.get('wins', 0)}</code>\n"
             f"┣━━━━━━━━━━━━━━━━━━\n"
-            f"┃ ⛏ <b>Майнинг:</b>   {farm_status}\n"
+            f"┃ ⛏ <b>Майнинг:</b>    {farm_status}\n"
             f"╚══════════════════╝"
         )
 
-        # 5. Отправка (VIP с фоном или обычный текст)
+        # 5. Отправка (VIP с фоном или обычный текст) с поддержкой message_thread_id
         bg = u.get("vip_background")
         if is_vip and bg:
             if u.get("vip_type") == "photo":
@@ -314,8 +320,10 @@ def profile(m):
 
     except Exception as e:
         logger.error(f"Ошибка профиля: {e}")
-        bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.")
-
+        # Здесь тоже добавляем t_id, чтобы ошибка не улетела в "General"
+        t_id = getattr(m, 'message_thread_id', None)
+        bot.send_message(m.chat.id, "❌ Ошибка при генерации профиля.", message_thread_id=t_id)
+        
 # ---------- FARM ----------
 @bot.message_handler(func=lambda m: m.text == "⛏ Фарм" or m.text == "/farm")
 
