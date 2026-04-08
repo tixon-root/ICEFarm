@@ -114,8 +114,7 @@ app = Flask(__name__)
 
 # ---------- DB ----------
 try:
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    client.server_info()
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000, connectTimeoutMS=3000)
 
     db = client["icecoin"]
     users = db["users"]
