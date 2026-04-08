@@ -1645,15 +1645,39 @@ def unknown_command(m):
 
 # ── Верификация Telegram initData ──────────────────────────────
 def verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
-    """
-    Проверяет подпись initData от Telegram Mini App.
-    Возвращает dict с данными пользователя или None если подпись неверна.
-    """
     try:
+        from urllib.parse import unquote
+        init_data = unquote(init_data)
+        
         parsed = dict(parse_qsl(init_data, keep_blank_values=True))
         received_hash = parsed.pop("hash", None)
         if not received_hash:
             return None
+
+        data_check_string = "\n".join(
+            f"{k}={v}" for k, v in sorted(parsed.items())
+        )
+
+        secret_key = hmac.new(
+            b"WebAppData",
+            bot_token.encode("utf-8"),
+            hashlib.sha256
+        ).digest()
+
+        expected_hash = hmac.new(
+            secret_key,
+            data_check_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected_hash, received_hash):
+            return None
+
+        return json.loads(parsed.get("user", "{}"))
+
+    except Exception as e:
+        logger.error(f"verify error: {e}")
+        return None
  
         # Собираем строку для проверки
         data_check_string = "\n".join(
