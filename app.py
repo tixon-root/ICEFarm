@@ -1642,6 +1642,323 @@ def unknown_command(m):
     if m.chat.type != 'private': return
     bot.reply_to(m, "❓ Неизвестная команда. Используйте меню или /start")
 
+
+# ── Верификация Telegram initData ──────────────────────────────
+def verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
+    """
+    Проверяет подпись initData от Telegram Mini App.
+    Возвращает dict с данными пользователя или None если подпись неверна.
+    """
+    try:
+        parsed = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = parsed.pop("hash", None)
+        if not received_hash:
+            return None
+ 
+        # Собираем строку для проверки
+        data_check_string = "\n".join(
+            f"{k}={v}" for k, v in sorted(parsed.items())
+        )
+ 
+        # Генерируем секретный ключ
+        secret_key = hmac.new(
+            b"WebAppData",
+            bot_token.encode(),
+            hashlib.sha256
+        ).digest()
+ 
+        # Считаем HMAC
+        expected_hash = hmac.new(
+            secret_key,
+            data_check_string.encode(),
+            hashlib.sha256
+        ).hexdigest()
+ 
+        if not hmac.compare_digest(expected_hash, received_hash):
+            return None
+ 
+        # Возвращаем user из initData
+        user_str = parsed.get("user", "{}")
+        return json.loads(user_str)
+ 
+    except Exception as e:
+        logger.error(f"verify_telegram_init_data error: {e}")
+        return None
+ 
+ 
+# ── CORS — разрешаем запросы из Mini App ──────────────────────
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Init-Data"
+    return response
+ 
+@app.route("/api/<path:path>", methods=["OPTIONS"])
+def options_handler(path):
+    return "", 204
+ 
+ 
+# ── Хелпер: достать uid из initData ───────────────────────────
+def get_uid_from_request():
+    """
+    Читает X-Init-Data из заголовка, верифицирует и возвращает uid.
+    В режиме DEV (без initData) возвращает тестовый uid.
+    """
+    init_data = request.headers.get("X-Init-Data", "")
+ 
+    if not init_data:
+        # DEV режим — только для тестирования локально
+        # Убери это в продакшене или добавь проверку окружения
+        return None, jsonify({"error": "No init data"}), 401
+ 
+    tg_user = verify_telegram_init_data(init_data, TOKEN)
+    if not tg_user:
+        return None, jsonify({"error": "Invalid init data"}), 403
+ 
+    return tg_user.get("id"), None, None
+ 
+ 
+# ================================================================
+# GET /api/user — профиль игрока
+# ================================================================
+@app.route("/api/user", methods=["GET"])
+def api_get_user():
+    try:
+        uid, err_response, err_code = get_uid_from_request()
+        if err_response:
+            return err_response, err_code
+ 
+        u = users.find_one({"_id": uid})
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+ 
+        now = int(time.time())
+        price_doc = settings.find_one({"_id": "ice_price"})
+        current_price = price_doc["value"] if price_doc else "?"
+ 
+        # Считаем статус фарма
+        last_farm = u.get("farm", 0)
+        farm_ready = (now - last_farm) >= FARM_CD
+        farm_wait_sec = max(0, FARM_CD - (now - last_farm))
+ 
+        return jsonify({
+            "uid":          u["_id"],
+            "username":     u.get("username", ""),
+            "first_name":   u.get("first_name", ""),
+            "balance":      round(float(u.get("balance", 0)), 2),
+            "level":        u.get("level", 1),
+            "wins":         u.get("wins", 0),
+            "rp":           u.get("rp", 0),
+            "total_burned": round(float(u.get("total_burned", 0)), 2),
+            "farm_ready":   farm_ready,
+            "farm_wait_sec": farm_wait_sec,
+            "is_vip":       u.get("is_vip", False),
+            "ice_price":    current_price,
+        })
+ 
+    except Exception as e:
+        logger.error(f"api_get_user error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
+ 
+# ================================================================
+# POST /api/farm — выполнить фарм
+# ================================================================
+@app.route("/api/farm", methods=["POST"])
+def api_farm():
+    try:
+        uid, err_response, err_code = get_uid_from_request()
+        if err_response:
+            return err_response, err_code
+ 
+        u = users.find_one({"_id": uid})
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+ 
+        now = int(time.time())
+        last_farm = u.get("farm", 0)
+ 
+        if (now - last_farm) < FARM_CD:
+            wait = FARM_CD - (now - last_farm)
+            return jsonify({
+                "success": False,
+                "error": "cooldown",
+                "wait_sec": wait
+            }), 429
+ 
+        gain = farm_amount(u["level"])
+        if u.get("is_vip", False):
+            gain += 0.5
+ 
+        new_balance = round(float(u.get("balance", 0)) + gain, 2)
+ 
+        users.update_one(
+            {"_id": uid},
+            {"$set": {"farm": now, "balance": new_balance}}
+        )
+ 
+        return jsonify({
+            "success":     True,
+            "gained":      gain,
+            "new_balance": new_balance,
+            "level":       u["level"],
+            "is_vip":      u.get("is_vip", False),
+        })
+ 
+    except Exception as e:
+        logger.error(f"api_farm error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
+ 
+# ================================================================
+# POST /api/burn — сжечь ICE
+# ================================================================
+@app.route("/api/burn", methods=["POST"])
+def api_burn():
+    try:
+        uid, err_response, err_code = get_uid_from_request()
+        if err_response:
+            return err_response, err_code
+ 
+        data = request.get_json(force=True)
+        amount = float(data.get("amount", 0))
+ 
+        if amount < 1:
+            return jsonify({"error": "Min burn is 1 ICE"}), 400
+ 
+        u = users.find_one({"_id": uid})
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+ 
+        balance = float(u.get("balance", 0))
+        if balance < amount:
+            return jsonify({"error": "Insufficient balance"}), 400
+ 
+        new_balance = round(balance - amount, 2)
+        new_burned  = round(float(u.get("total_burned", 0)) + amount, 2)
+ 
+        # Определяем ранг сжигания
+        _, burn_emoji = get_burn_rank(new_burned)
+ 
+        users.update_one(
+            {"_id": uid},
+            {"$set": {
+                "balance":      new_balance,
+                "total_burned": new_burned,
+                "burn_emoji":   burn_emoji
+            }}
+        )
+ 
+        rank_name, _ = get_burn_rank(new_burned)
+ 
+        return jsonify({
+            "success":      True,
+            "burned":       amount,
+            "new_balance":  new_balance,
+            "total_burned": new_burned,
+            "rank":         rank_name,
+        })
+ 
+    except Exception as e:
+        logger.error(f"api_burn error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
+ 
+# ================================================================
+# POST /api/game — результат игры (dice / slots / crash / flip)
+# ================================================================
+@app.route("/api/game", methods=["POST"])
+def api_game():
+    try:
+        uid, err_response, err_code = get_uid_from_request()
+        if err_response:
+            return err_response, err_code
+ 
+        data    = request.get_json(force=True)
+        game    = data.get("game")       # "dice" | "slots" | "crash" | "flip"
+        bet     = float(data.get("bet", 0))
+        won     = bool(data.get("won", False))
+        payout  = float(data.get("payout", 0))  # итоговая выплата (уже посчитана на клиенте)
+ 
+        if bet <= 0:
+            return jsonify({"error": "Invalid bet"}), 400
+ 
+        u = users.find_one({"_id": uid})
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+ 
+        balance = float(u.get("balance", 0))
+ 
+        # Для списания — если клиент ещё не снял (зависит от игры)
+        # Здесь логика: клиент шлёт ставку и финальную выплату
+        # Итог = payout - bet (может быть отрицательным)
+        delta = round(payout - bet, 2)
+        new_balance = round(balance + delta, 2)
+ 
+        # Защита от отрицательного баланса
+        if new_balance < 0:
+            return jsonify({"error": "Insufficient balance"}), 400
+ 
+        update_fields = {"balance": new_balance}
+ 
+        if won and game == "dice":
+            update_fields["wins"]  = u.get("wins", 0) + 1
+            update_fields["rp"]    = max(0, u.get("rp", 0) + RP_WIN)
+        elif not won and game == "dice":
+            update_fields["rp"]    = max(0, u.get("rp", 0) + RP_LOSS)
+ 
+        users.update_one({"_id": uid}, {"$set": update_fields})
+ 
+        return jsonify({
+            "success":     True,
+            "new_balance": new_balance,
+            "delta":       delta,
+            "wins":        update_fields.get("wins", u.get("wins", 0)),
+            "rp":          update_fields.get("rp", u.get("rp", 0)),
+        })
+ 
+    except Exception as e:
+        logger.error(f"api_game error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
+ 
+# ================================================================
+# GET /api/top?field=balance — таблица лидеров
+# ================================================================
+@app.route("/api/top", methods=["GET"])
+def api_top():
+    try:
+        field = request.args.get("field", "balance")
+        if field not in ("balance", "level", "wins", "rp"):
+            field = "balance"
+ 
+        top = list(
+            users.find(
+                {},
+                {"_id": 1, "username": 1, "first_name": 1,
+                 "balance": 1, "level": 1, "wins": 1, "rp": 1}
+            ).sort(field, -1).limit(10)
+        )
+ 
+        result = []
+        for u in top:
+            result.append({
+                "uid":        u["_id"],
+                "name":       u.get("first_name") or u.get("username") or f"User_{u['_id']}",
+                "username":   u.get("username", ""),
+                "balance":    round(float(u.get("balance", 0)), 2),
+                "level":      u.get("level", 1),
+                "wins":       u.get("wins", 0),
+                "rp":         u.get("rp", 0),
+            })
+ 
+        return jsonify({"success": True, "top": result, "field": field})
+ 
+    except Exception as e:
+        logger.error(f"api_top error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
 # ---------- RUN ----------
 
 if __name__ == "__main__":
