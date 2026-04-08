@@ -1957,21 +1957,19 @@ def api_top():
         return jsonify({"error": "Server error"}), 500
  
 # ---------- RUN ----------
-
 if __name__ == "__main__":
     logger.info("Запуск ICECOIN...")
-
     if WEBHOOK and "http" in WEBHOOK:
         try:
             bot.remove_webhook()
             time.sleep(1)
             bot.set_webhook(url=f"{WEBHOOK}/{TOKEN}")
-            logger.info(f"Webhook установлен: {WEBHOOK}/{TOKEN}")
             port = int(os.environ.get("PORT", 10000))
             app.run(host="0.0.0.0", port=port)
         except Exception as e:
-            logger.error(f"Ошибка при установке Webhook: {e}")
+            logger.error(f"Ошибка: {e}")
+            port = int(os.environ.get("PORT", 10000))
+            app.run(host="0.0.0.0", port=port)
     else:
-        logger.info("Запуск через Long Polling (локально)...")
         bot.remove_webhook()
         bot.infinity_polling()
