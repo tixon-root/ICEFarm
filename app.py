@@ -1678,38 +1678,7 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     except Exception as e:
         logger.error(f"verify error: {e}")
         return None
- 
-        # Собираем строку для проверки
-        data_check_string = "\n".join(
-            f"{k}={v}" for k, v in sorted(parsed.items())
-        )
- 
-        # Генерируем секретный ключ
-        secret_key = hmac.new(
-            b"WebAppData",
-            bot_token.encode(),
-            hashlib.sha256
-        ).digest()
- 
-        # Считаем HMAC
-        expected_hash = hmac.new(
-            secret_key,
-            data_check_string.encode(),
-            hashlib.sha256
-        ).hexdigest()
- 
-        if not hmac.compare_digest(expected_hash, received_hash):
-            return None
- 
-        # Возвращаем user из initData
-        user_str = parsed.get("user", "{}")
-        return json.loads(user_str)
- 
-    except Exception as e:
-        logger.error(f"verify_telegram_init_data error: {e}")
-        return None
- 
- 
+
 # ── CORS — разрешаем запросы из Mini App ──────────────────────
 @app.after_request
 def add_cors_headers(response):
