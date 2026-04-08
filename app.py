@@ -1694,21 +1694,22 @@ def options_handler(path):
  
 # ── Хелпер: достать uid из initData ───────────────────────────
 def get_uid_from_request():
-    """
-    Читает X-Init-Data из заголовка, верифицирует и возвращает uid.
-    В режиме DEV (без initData) возвращает тестовый uid.
-    """
     init_data = request.headers.get("X-Init-Data", "")
- 
+    
+    logger.info(f"Init data received: {init_data[:50] if init_data else 'EMPTY'}")
+    
     if not init_data:
-        # DEV режим — только для тестирования локально
-        # Убери это в продакшене или добавь проверку окружения
         return None, jsonify({"error": "No init data"}), 401
- 
+
+    from urllib.parse import unquote
+    init_data = unquote(init_data)
+    
     tg_user = verify_telegram_init_data(init_data, TOKEN)
+    logger.info(f"TG user result: {tg_user}")
+    
     if not tg_user:
-        return None, jsonify({"error": "Invalid init data"}), 403
- 
+        return None, jsonify({"error": "Invalid init data", "debug": init_data[:100]}), 403
+
     return tg_user.get("id"), None, None
  
  
