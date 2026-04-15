@@ -118,6 +118,8 @@ try:
 
     db = client["icecoin"]
     users = db["users"]
+    pixels = db["pixels"]
+    pixels.create_index([("x", 1), ("y", 1)], unique=True)
     battles = db["battles"]
     settings = db["settings"]
 
