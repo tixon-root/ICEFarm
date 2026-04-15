@@ -1957,6 +1957,123 @@ def api_top():
     except Exception as e:
         logger.error(f"api_top error: {e}")
         return jsonify({"error": "Server error"}), 500
+
+
+PIXEL_CD = 600  # 10 минут
+ 
+ 
+# ================================================================
+# GET /api/pixels — все пиксели на карте
+# ================================================================
+@app.route("/api/pixels", methods=["GET"])
+def api_get_pixels():
+    try:
+        all_pixels = list(pixels.find(
+            {},
+            {"_id": 0, "x": 1, "y": 1, "color": 1,
+             "username": 1, "first_name": 1, "placed_at": 1}
+        ))
+        return jsonify({"success": True, "pixels": all_pixels})
+    except Exception as e:
+        logger.error(f"api_get_pixels error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
+ 
+# ================================================================
+# GET /api/pixel/cooldown — кулдаун текущего игрока
+# ================================================================
+@app.route("/api/pixel/cooldown", methods=["GET"])
+def api_pixel_cooldown():
+    try:
+        uid, err_response, err_code = get_uid_from_request()
+        if err_response:
+            return err_response, err_code
+ 
+        u = users.find_one({"_id": uid}, {"pixel_ts": 1})
+        if not u:
+            return jsonify({"wait_sec": 0})
+ 
+        now = int(time.time())
+        last_pixel = u.get("pixel_ts", 0)
+        wait = max(0, PIXEL_CD - (now - last_pixel))
+ 
+        return jsonify({"success": True, "wait_sec": wait})
+ 
+    except Exception as e:
+        logger.error(f"api_pixel_cooldown error: {e}")
+        return jsonify({"error": "Server error"}), 500
+ 
+ 
+@app.route("/api/pixel", methods=["POST"])
+def api_place_pixel():
+    try:
+        uid, err_response, err_code = get_uid_from_request()
+        if err_response:
+            return err_response, err_code
+ 
+        data  = request.get_json(force=True)
+        x     = int(data.get("x", -1))
+        y     = int(data.get("y", -1))
+        color = str(data.get("color", "#ffffff")).strip()
+ 
+        # Валидация координат
+        if not (0 <= x < 500 and 0 <= y < 500):
+            return jsonify({"error": "Invalid coordinates"}), 400
+ 
+        # Валидация цвета — должен быть HEX
+        import re as _re
+        if not _re.match(r'^#[0-9a-fA-F]{6}$', color):
+            return jsonify({"error": "Invalid color"}), 400
+ 
+        # Проверка кулдауна
+        u = users.find_one({"_id": uid})
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+ 
+        now = int(time.time())
+        last_pixel = u.get("pixel_ts", 0)
+        wait = PIXEL_CD - (now - last_pixel)
+ 
+        if wait > 0:
+            return jsonify({
+                "error": f"Cooldown! Wait {wait} sec",
+                "wait_sec": wait
+            }), 429
+ 
+        username   = u.get("username", "")
+        first_name = u.get("first_name", "")
+ 
+        # Сохраняем/обновляем пиксель (upsert)
+        pixels.update_one(
+            {"x": x, "y": y},
+            {"$set": {
+                "x":          x,
+                "y":          y,
+                "color":      color,
+                "uid":        uid,
+                "username":   username,
+                "first_name": first_name,
+                "placed_at":  now,
+            }},
+            upsert=True
+        )
+ 
+        # Обновляем timestamp последнего пикселя у пользователя
+        users.update_one({"_id": uid}, {"$set": {"pixel_ts": now}})
+ 
+        return jsonify({
+            "success":    True,
+            "x":          x,
+            "y":          y,
+            "color":      color,
+            "username":   username,
+            "first_name": first_name,
+            "placed_at":  now,
+        })
+ 
+    except Exception as e:
+        logger.error(f"api_place_pixel error: {e}")
+        return jsonify({"error": "Server error"}), 500
  
 # ---------- RUN ----------
 if __name__ == "__main__":
