@@ -5197,21 +5197,41 @@ def battle_board_parts(b):
     right = sorted(b["rb"], key=lambda x: -x["pts"])
 
     def mk(x):
-        return "⚔️:1" if x["att"] == 1 else ("⏳" if x["att"] == 2 else ("⚔️:0🏆" if x.get("won") else "⚔️:0"))
+        return "⚔️:1" if x["att"] else ("⚔️:0🏆" if x.get("won") else "⚔️:0")
 
     left_s = max(0, b["end_ts"] - int(time.time()))
-    timer = f"⏳ До конца: <b>{left_s // 3600}ч {(left_s % 3600) // 60}м</b>" if b.get("status") == "active" and left_s > 0 else "⌛ Бой завершён"
-    head = (f"<b>{safe(ca.get('name', '?'))}</b> ⚔️ <b>{safe(cb.get('name', '?'))}</b>\n\n"
-            f"⭐ {fmt(b['pa'])} PTS  |  ⭐ {fmt(b['pb'])} PTS\n"
-            f"📊 Счёт: <b>{b['sa']} : {b['sb']}</b>\n{timer}")
+    timer = (
+        f"⏳ До конца: <b>{left_s // 3600}ч {(left_s % 3600) // 60}м</b>"
+        if b.get("status") == "active" and left_s > 0
+        else "⌛ Бой завершён"
+    )
+
     rows = []
-    for l, r in zip(left, right):
-        rows.append(f"{safe(names.get(l['uid'], l['uid']))} [{l['pts']}] {mk(l)} 🆚 {mk(r)} {safe(names.get(r['uid'], r['uid']))} [{r['pts']}]")
+    for l, r in zip(left[:3], right[:3]):
+        rows.append(
+            f"[{l['uid']}] {safe(names.get(l['uid'], l['uid']))} : "
+            f"{safe(names.get(r['uid'], r['uid']))} [{r['uid']}]"
+        )
+
+    head = (
+        f"Game Masters ⚔️ DarkFall\n"
+        f"⭐ {fmt(b['pa'])} PTS | ⭐ {fmt(b['pb'])} PTS\n"
+        f"            📊 Счёт: {b['sa']} : {b['sb']} ( В центре )\n\n"
+        f"<blockquote>\n"
+        + "\n".join(rows)
+        + f"\n</blockquote>\n\n"
+        f"📜 🏆 {safe(names.get(left[0]['uid'], left[0]['uid']))} | "
+        f"{safe(names.get(right[0]['uid'], right[0]['uid']))} 🤖\n"
+        f"📜 👎 {safe(names.get(left[1]['uid'], left[1]['uid']))} | "
+        f"{safe(names.get(right[1]['uid'], right[1]['uid']))} 🤖\n\n"
+        f"➖➖➖➖➖➖➖➖\n"
+        f"{timer}"
+    )
+
     body = "\n".join(rows)
     if b.get("log"):
-        body += "\n\n📜 " + "\n📜 ".join(safe(x) for x in b["log"][-3:])
-    media = ca if clan_level(ca) >= clan_level(cb) else cb
-    return head, body, media
+        ...
+    return head, body
 
 def battle_send_board(chat_id, bid, uid, thread_id=None):
     b = clan_battles.find_one({"_id": bid})
