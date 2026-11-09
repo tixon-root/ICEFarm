@@ -850,7 +850,7 @@ WEBAPP_URL = os.getenv("WEBAPP_URL") or ((WEBHOOK or "").rstrip("/") + "/app")
 
 @app.route("/app")
 def miniapp_page():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "miniapp.html")
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
     with open(path, encoding="utf-8") as fh:
         html = fh.read()
     return html, 200, {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache"}
@@ -860,7 +860,7 @@ def setup_webapp_button():
     try:
         if WEBAPP_URL.startswith("https://"):
             bot.set_chat_menu_button(menu_button=types.MenuButtonWebApp(
-                type="web_app", text="🎮 Играть", web_app=types.WebAppInfo(url=WEBAPP_URL)))
+                type="web_app", text="App", web_app=types.WebAppInfo(url=WEBAPP_URL)))
     except Exception as e:
         logger.error(f"menu button error: {e}")
 
